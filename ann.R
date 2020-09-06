@@ -19,6 +19,8 @@ run_librarys <- function() {
   library(neuralnet)
   library(boot)
   library(plyr)
+  library(FCNN4R)
+  library(RSNNS)
   print("end........")
 }
 run_librarys()
@@ -168,17 +170,23 @@ colnames(cmf) <- c("CMF")
 bbands <- BBands(HLC, volume=data$Volume, n=20, maType=VWAP, sd=2)
 
 nr <- nrow(HLC)
-size <- 939-700
-#size <- 939-500
-ud2 <- 970-941
-upper <- nrow(HLC)-ud2-1
-#upper <- nr-size
+holdOutSize <- 29
+holdOutEnd <- nrow(HLC)
+holdOutBegin <- holdOutEnd-holdOutSize
+size <- 939-500
+upper <- nrow(HLC)-holdOutSize-1
 lower <- upper-size
 d <- 940-917
-ud <- 969-940
 
 # split the dataset 90-10% ratio
-trainIndex <- createDataPartition(set.lr[(lower+1):(upper+1)], p=.9, list=F)
+#sorted list but missing some elements
+
+#trainIndexes <- matrix(NA, (holdOutBegin)-(lower+1),10)
+
+#View(trainIndexesList)
+#trainIndexesList <- mclapply(1:ncol(trainIndexes), function(x) { return(createDataPartition(set.lr[(lower+1):(holdOutBegin)], p=.9, list=F))})
+
+#trainFolds <- createFolds(set.lr[(lower+1):(holdOutBegin)], k=10, list=F)
 
 trainSet <- cbind(rsi[lower:upper], cci[lower:upper], macd[lower:upper], will[lower:upper], stochK[lower:upper], stochD[lower:upper], ar[lower:upper], sar[lower:upper], cmf[lower:upper], bbands[lower:upper])
 Input<-
@@ -188,11 +196,12 @@ Input<-
       ,nrow=size+1)
   )
 
-
-trainTarget<-as.numeric(matrix(c(set.lr[(lower+1):(upper+1)]), nrow=size+1))
+trainTarget<-as.numeric(matrix(c(set.lr[(lower+1):(holdOutBegin)]), nrow=size+1))
 
 trainingdata <- cbind(Input,trainTarget)
 #View(trainingdata)
+
+trainIndex <- createDataPartition(set.lr[(lower+1):(holdOutBegin)], p=.9, list=F)
 
 set.train <- trainingdata[trainIndex, ]
 set.test <- trainingdata[-trainIndex, ]
@@ -211,6 +220,35 @@ frmla <- as.formula(paste(colnames(set.train)[ncol(set.train)], paste(colnames(s
                                                          collapse = " + "), sep = " ~ "))
 
 trainNN = neuralnet(frmla, predict(trainParam, set.train), hidden = ncol(set.train) , linear.output = T )
+
+#mlp
+{
+  model = model <- mlp( predict(trainParam, set.train)[,1:(ncol(set.train)-1)], predict(trainParam, set.train)[,(ncol(set.train))], size=5, learnFuncParams=c(0.1), maxit = 50, inputsTest=predict(trainParam, set.test)[,1:(ncol(set.test)-1)], targetsTest=predict(trainParam, set.test)[,(ncol(set.test))]) 
+  summary(model)
+  model
+  weightMatrix(model)
+  extractNetInfo(model)
+  
+  par(mfrow=c(2,2))
+  plotIterativeError(model)
+  
+  predictions <- predict(model,predict(trainParam, set.test)[,1:(ncol(set.test)-1)])
+  
+  plotRegressionError(predictions[,1], predict(trainParam, set.test)[,(ncol(set.test))])
+  
+  confusionMatrix(predict(trainParam, set.train)[,(ncol(set.train))],fitted.values(model))
+  confusionMatrix(predict(trainParam, set.test)[,(ncol(set.test))],predictions)
+  
+  plotROC(fitted.values(model)[,1], predict(trainParam, set.train)[,(ncol(set.train))])
+  plotROC(predictions[,1], predict(trainParam, set.test)[,(ncol(set.test))])
+  
+  #confusion matrix with 402040-method
+  confusionMatrix(predict(trainParam, set.train)[,(ncol(set.train))], encodeClassLabels(fitted.values(model),
+                                                       method="402040", l=0.4, h=0.6))
+}
+
+
+View(trainNN)
 plot(trainNN)
 
 #apply training normalization param's to testdata prior to
@@ -248,9 +286,9 @@ RMSE.NN
 
 #holdoutSet
 
-testSet <- cbind(rsi[upper:(upper+ud)], cci[upper:(upper+ud)], macd[upper:(upper+ud)], will[upper:(upper+ud)], stochK[upper:(upper+ud)], stochD[upper:(upper+ud)], ar[upper:(upper+ud)], sar[upper:(upper+ud)], cmf[upper:(upper+ud)],bbands[upper:(upper+ud)])
-InputTest<-matrix(testSet,nrow=ud+1)
-TargetTest<-matrix(c(set.lr[(upper+1):(upper+1+ud2)]), nrow=ud+1)
+testSet <- cbind(rsi[upper:(upper+holdOutSize)], cci[upper:(upper+holdOutSize)], macd[upper:(upper+holdOutSize)], will[upper:(upper+holdOutSize)], stochK[upper:(upper+holdOutSize)], stochD[upper:(upper+holdOutSize)], ar[upper:(upper+holdOutSize)], sar[upper:(upper+holdOutSize)], cmf[upper:(upper+holdOutSize)],bbands[upper:(upper+holdOutSize)])
+InputTest<-matrix(testSet,nrow=holdOutSize+1)
+TargetTest<-matrix(c(set.lr[holdOutBegin:holdOutEnd]), nrow=holdOutSize+1)
 
 Testdata <- cbind(InputTest,TargetTest)
 colnames(Testdata) <- colnames(trainingdata)
@@ -298,13 +336,11 @@ for (i in 2:31) {
 x<-1:31
 matplot(cbind(money, money2), type = "l", xaxt = "n", ylab = "")
 legend("topright", legend = c("Neural network","Benchmark"), pch = 19, col = c("black", "red"))
-axis(1, at = c(1,10,20,ud+1), lab  = row.names(data.frame(rsi[upper:(upper+ud),,drop=FALSE]))[c(1,10,20,ud+1)])
+axis(1, at = c(1,10,20,holdOutSize+1), lab  = row.names(data.frame(rsi[upper:(upper+holdOutSize),,drop=FALSE]))[c(1,10,20,holdOutSize+1)])
 
 box()
 mtext(side = 1, "Test dataset", line = 2)
 mtext(side = 2, "Investment value", line = 2)
-
-
 
 # Initialize variables
 set.seed(50)
@@ -343,7 +379,8 @@ Matrix.RMSE
 #would like to collapse this to set.train but for some reason throws a warning message if I do that. (of course set.train is later)
 
 # derive the best neural network model using rmse criteria 
-best.network<-matrix(c(5,0.5))
+#best.network<-matrix(c(5,0.5))
+best.network<-matrix(c(5))
 best.rmse<-1
 #https://stackoverflow.com/questions/17105979/i-get-error-error-in-nnet-defaultx-y-w-too-many-77031-weights-whi/17107126
 
@@ -355,46 +392,77 @@ best.rmse<-1
 #j is for decay
 for (i in 5:15) 
   #i=5
-  for (j in 1:3) 
+  #for (j in 1:3) 
     {
-  #j=1
   
-  set.fit <- nnet(frmla, data = set.train, 
-                      #maxit=1000, MaxNWts=84581, size=i, decay=0.01*j, linout = 1)
-                  maxit=1000, size=i, MaxNWts=(ncol(data2))^(i+1), decay=0.01*j, linout = 1)
+    trainIndex <- createDataPartition(set.lr[(lower+1):(holdOutBegin)], p=.9, list=F)
+    
+    set.train <- trainingdata[trainIndex, ]
+    set.test <- trainingdata[-trainIndex, ]
+    
+    colnames(trainingdata) <- c(colnames(trainSet),"Return")
+    colnames(set.train) <- colnames(trainingdata)
+    colnames(set.test) <- colnames(trainingdata)
+    
+    #normalization
+    trainParam <- caret::preProcess(set.train)
+    
+    #j=1
+    
+    trainNN <- neuralnet(frmla, predict(trainParam, set.train), hidden = i , linear.output = F)
   
-  set.predict <- predict(set.fit, newdata = set.test)
-  set.rmse <- sqrt(mean((set.predict - set.lr[(upper-d):upper])^2)) 
-  if (set.rmse<best.rmse) {
-    best.network[1,1]<-i
-    best.network[2,1]<-j
-    best.rmse<-set.rmse  
+    #set.fit <- nnet(frmla, data = set.train, 
+                        #maxit=1000, MaxNWts=84581, size=i, decay=0.01*j, linout = 1)
+                    #maxit=1000, size=i, MaxNWts=(ncol(data2))^(i+1), decay=0.01*j, linout = 1)
+    
+    predict_testNN = compute(trainNN, predict(trainParam, set.test)[,1:(ncol(set.test)-1)])
+    
+    #convert back
+    #inverse of log
+    pred <- predict_testNN$net.result*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)])
+    pred[pred>0,] <- exp(1)^log(pred[pred>0,])
+    pred[pred<0] <- -exp(1)^log(abs(pred[pred<0,]))
+    
+    denormalizedTrainPredictions <- pred
+    
+    set.rmse <- (sum((set.test[,ncol(set.test)]*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)]) - denormalizedTrainPredictions)^2) / nrow(set.test)) ^ 0.5
+    if (set.rmse<best.rmse) {
+      best.network[1]<-i
+      #best.network[2,1]<-j
+      best.rmse<-set.rmse  
+    }
   }
-}
 
 # create the Input and Target matrix for test
 
-InputTest<-matrix(cbind(rsi[upper:(upper+ud)], cci[upper:(upper+ud)], macd[upper:(upper+ud)], will[upper:(upper+ud)], stochK[upper:(upper+ud)], stochD[upper:(upper+ud)], ar[upper:(upper+ud)], sar[upper:(upper+ud)], cmf[upper:(upper+ud)],bbands[upper:(upper+ud)]),nrow=ud+1)
-TargetTest<-matrix(c(set.lr[(upper+1):(upper+1+ud2)]), nrow=ud+1)
+InputTest<-matrix(cbind(rsi[upper:(upper+holdOutSize)], cci[upper:(upper+holdOutSize)], macd[upper:(upper+holdOutSize)], will[upper:(upper+holdOutSize)], stochK[upper:(upper+holdOutSize)], stochD[upper:(upper+holdOutSize)], ar[upper:(upper+holdOutSize)], sar[upper:(upper+holdOutSize)], cmf[upper:(upper+holdOutSize)],bbands[upper:(upper+holdOutSize)]),nrow=holdOutSize+1)
+TargetTest<-matrix(c(set.lr[holdOutBegin:holdOutEnd]), nrow=holdOutSize+1)
 
 Testdata <- cbind(InputTest,TargetTest)
-colnames(Testdata) <- c("RSI","CCI","MACD","WILL","STOCHK","STOCHD", "AR", "SAR", "CMF", "dn", "mavg", "up", "pctB", "Return")
+colnames(Testdata) <- colnames(trainingdata)
 
 # fit the best model on test data
-set.fit <- nnet(frmla, data = trainingdata, 
-                    maxit=1000, MaxNWts=84581, size=best.network[1,1], decay=0.1*best.network[2,1], linout = 1) 
+#set.fit <- nnet(frmla, data = trainingdata, maxit=1000, MaxNWts=84581, size=best.network[1,1], decay=0.1*best.network[2,1], linout = 1) 
 
-set.predict1 <- predict(set.fit, newdata = Testdata)
+traindataParam <- caret::preProcess(trainingdata)
+
+set.fit <- neuralnet(frmla, predict(traindataParam, trainingdata), hidden = best.network , linear.output = F)
+
+set.predict1 <- predict(set.fit, newdata = predict(traindataParam, data.frame(Testdata))[,1:(ncol(Testdata)-1)])
 
 #candidate for parallelization
 # repeat and average the model 20 times  
 for (i in 1:20) {
-  set.fit <- nnet(frmla, data = trainingdata, 
-                      maxit=1000, size=best.network[1,1], decay=0.1*best.network[2,1], linout = 1) 
+  #set.fit <- nnet(frmla, data = trainingdata, maxit=1000, size=best.network[1,1], decay=0.1*best.network[2,1], linout = 1) 
+  set.fit <- neuralnet(frmla, predict(traindataParam, trainingdata), hidden = best.network , linear.output = F)
   
-  set.predict<- predict(set.fit, newdata = Testdata)
+  set.predict <- predict(set.fit, newdata = predict(traindataParam, data.frame(Testdata))[,1:(ncol(Testdata)-1)])
+  
+  #set.predict<- predict(set.fit, newdata = Testdata)
   set.predict1<-(set.predict1+set.predict)/2
 }
+
+set.predict1 <- set.predict1*sd(trainingdata[,ncol(trainingdata)])+mean(trainingdata[,ncol(trainingdata)])
 
 # calculate the buy-and-hold benchmark strategy and neural network profit on the test dataset
 money<-matrix(0,31)
@@ -424,7 +492,7 @@ for (i in 2:31) {
 x<-1:31
 matplot(cbind(money, money2), type = "l", xaxt = "n", ylab = "")
 legend("topright", legend = c("Neural network","Benchmark"), pch = 19, col = c("black", "red"))
-axis(1, at = c(1,10,20,ud+1), lab  = row.names(data.frame(rsi[upper:(upper+ud),,drop=FALSE]))[c(1,10,20,ud+1)])
+axis(1, at = c(1,10,20,holdOutSize+1), lab  = row.names(data.frame(rsi[upper:(upper+holdOutSize),,drop=FALSE]))[c(1,10,20,holdOutSize+1)])
 
 box()
 mtext(side = 1, "Test dataset", line = 2)
