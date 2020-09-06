@@ -1,5 +1,3 @@
-#https://rpubs.com/sergiomora123/Bitcoin_nnet
-
 run_librarys <- function() {
   library(readxl)
   library(readr)
@@ -13,9 +11,14 @@ run_librarys <- function() {
   library(TTR)
   library(caret)
   library(nnet)
+  library(parallel)
   library(lubridate)
+  library(PerformanceAnalytics)
   library(data.table)
   library(imputeTS)
+  library(neuralnet)
+  library(boot)
+  library(plyr)
   print("end........")
 }
 run_librarys()
@@ -146,6 +149,7 @@ HLC<-matrix(c(data2$High, data2$Low, data2$Close),nrow=length(data2$High))
 
 # calculate log returns
 set.lr<-diff(log(price))
+#set.lr<-diff((price))
 
 # generate technical indicators 
 rsi<-RSI(price)
@@ -173,26 +177,170 @@ lower <- upper-size
 d <- 940-917
 ud <- 969-940
 
-#Input<-(matrix(c(rownames(data.frame(rsi[lower:upper,,drop=FALSE])),rsi[lower:upper], cci[lower:upper], macd[lower:upper], will[lower:upper], stochK[lower:upper], stochD[lower:upper]),nrow=240)[,-1])
-
-Input<-
-    (
-      matrix(
-        cbind(rsi[lower:upper], cci[lower:upper], macd[lower:upper], will[lower:upper], stochK[lower:upper], stochD[lower:upper], ar[lower:upper], sar[lower:upper], cmf[lower:upper], bbands[lower:upper])
-        ,nrow=size+1)
-     )
-
-Target<-as.numeric(matrix(c(set.lr[(lower+1):(upper+1)]), nrow=size+1))
-
-trainingdata <- cbind(Input,Target)
-#View(trainingdata)
-
-colnames(trainingdata) <- c("RSI","CCI","MACD","WILL","STOCHK","STOCHD", "AR", "SAR", "CMF", "dn", "mavg", "up", "pctB", "Return")
-
 # split the dataset 90-10% ratio
 trainIndex <- createDataPartition(set.lr[(lower+1):(upper+1)], p=.9, list=F)
+
+trainSet <- cbind(rsi[lower:upper], cci[lower:upper], macd[lower:upper], will[lower:upper], stochK[lower:upper], stochD[lower:upper], ar[lower:upper], sar[lower:upper], cmf[lower:upper], bbands[lower:upper])
+Input<-
+  (
+    matrix(
+      trainSet
+      ,nrow=size+1)
+  )
+
+
+trainTarget<-as.numeric(matrix(c(set.lr[(lower+1):(upper+1)]), nrow=size+1))
+
+trainingdata <- cbind(Input,trainTarget)
+#View(trainingdata)
+
 set.train <- trainingdata[trainIndex, ]
 set.test <- trainingdata[-trainIndex, ]
+
+colnames(trainingdata) <- c(colnames(trainSet),"Return")
+colnames(set.train) <- colnames(trainingdata)
+colnames(set.test) <- colnames(trainingdata)
+
+#normalization
+trainParam <- caret::preProcess(set.train)
+scaled = predict(trainParam, set.train)
+
+#method 1
+#https://medium.com/@salsabilabasalamah/cross-validation-of-an-artificial-neural-network-f72a879ea6d5
+frmla <- as.formula(paste(colnames(set.train)[ncol(set.train)], paste(colnames(set.train)[1:(ncol(set.train)-1)], sep = "", 
+                                                         collapse = " + "), sep = " ~ "))
+
+trainNN = neuralnet(frmla, predict(trainParam, set.train), hidden = ncol(set.train) , linear.output = T )
+plot(trainNN)
+
+#apply training normalization param's to testdata prior to
+predict_testNN = compute(trainNN, predict(trainParam, set.test)[,1:(ncol(set.test)-1)])
+
+#predict(trainParam, set.test)
+
+#convert back
+#predict(trainParam, set.train)[,ncol(set.train)]*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)])
+
+#inverse of log
+pred <- predict_testNN$net.result*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)])
+pred[pred>0,] <- exp(1)^log(pred[pred>0,])
+pred[pred<0] <- -exp(1)^log(abs(pred[pred<0,]))
+
+denormalizedTrainPredictions <- pred
+
+plot(set.test[,ncol(set.test)], denormalizedTrainPredictions, col='red', pch=16, 
+     ylab = "Predicted Rating NN", xlab = "real rating", main="Real Rating vs Predict NN")
+abline(0,1)
+
+trainYNormalized <- set.test[,"Return"]
+trainYNormalized[trainYNormalized>0] <- exp(1)^log(trainYNormalized[trainYNormalized>0])
+trainYNormalized[trainYNormalized<0] <- -exp(1)^log(abs(trainYNormalized[trainYNormalized<0]))
+
+plot(denormalizedTrainPredictions,trainYNormalized)
+abline(lm(denormalizedTrainPredictions~trainYNormalized))
+
+#
+#log(10)
+#exp(1)^log(10)
+
+RMSE.NN = (sum((set.test[,ncol(set.test)] - denormalizedTrainPredictions)^2) / nrow(set.test)) ^ 0.5
+RMSE.NN
+
+#holdoutSet
+
+testSet <- cbind(rsi[upper:(upper+ud)], cci[upper:(upper+ud)], macd[upper:(upper+ud)], will[upper:(upper+ud)], stochK[upper:(upper+ud)], stochD[upper:(upper+ud)], ar[upper:(upper+ud)], sar[upper:(upper+ud)], cmf[upper:(upper+ud)],bbands[upper:(upper+ud)])
+InputTest<-matrix(testSet,nrow=ud+1)
+TargetTest<-matrix(c(set.lr[(upper+1):(upper+1+ud2)]), nrow=ud+1)
+
+Testdata <- cbind(InputTest,TargetTest)
+colnames(Testdata) <- colnames(trainingdata)
+
+#apply training normalization param's to testdata
+predict_testNN = compute(trainNN, predict(trainParam, Testdata)[,c(1:(ncol(set.test)-1))])
+
+pred <- predict_testNN$net.result*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)])
+pred[pred>0,] <- exp(1)^log(pred[pred>0,])
+pred[pred<0] <- -exp(1)^log(abs(pred[pred<0,]))
+
+denormalizedTestPredictions <- pred
+
+testDataNormalized <- Testdata[,"Return"]
+testDataNormalized[testDataNormalized>0] <- exp(1)^log(testDataNormalized[testDataNormalized>0])
+testDataNormalized[testDataNormalized<0] <- -exp(1)^log(abs(testDataNormalized[testDataNormalized<0]))
+
+plot(denormalizedTestPredictions,testDataNormalized)
+abline(lm(denormalizedTestPredictions~testDataNormalized))
+
+money<-matrix(0,31)
+#money2 is benchmark, actual price
+money2<-matrix(0,31)
+money[1,1]<-100
+money2[1,1]<-100
+for (i in 2:31) {
+  #print(i)
+  #i=2
+  if (denormalizedTestPredictions[i-1]<0) {
+    direction1<--1  
+  } else {
+    direction1<-1}
+  if (testDataNormalized[i-1]<0) {
+    direction2<--1  
+  } else {
+    direction2<-1 }
+  if ((direction1-direction2)==0) {
+    money[i,1]<-money[i-1,1]*(1+abs(testDataNormalized[i-1]))  
+  } else {
+    money[i,1]<-money[i-1,1]*(1-abs(testDataNormalized[i-1])) }
+  money2[i,1]<-100*(as.numeric(price[upper+i-1])/as.numeric(price[upper]))
+}
+
+#plot benchmark and neural network profit on the test dataset
+x<-1:31
+matplot(cbind(money, money2), type = "l", xaxt = "n", ylab = "")
+legend("topright", legend = c("Neural network","Benchmark"), pch = 19, col = c("black", "red"))
+axis(1, at = c(1,10,20,ud+1), lab  = row.names(data.frame(rsi[upper:(upper+ud),,drop=FALSE]))[c(1,10,20,ud+1)])
+
+box()
+mtext(side = 1, "Test dataset", line = 2)
+mtext(side = 2, "Investment value", line = 2)
+
+
+
+# Initialize variables
+set.seed(50)
+k = 100
+RMSE.NN = NULL
+
+# Fit neural network model within nested for loop
+#j is size of training set
+for(j in 10:65){
+  for (i in 1:k) {
+    #keep set.test as holdout
+    index = sample(1:nrow(set.train),j )
+    
+    trainNN = scaled[index,]
+    testNN = scaled[-index,]
+    
+    NN = neuralnet(frmla, predict(trainParam, set.train), hidden = ncol(set.train) , linear.output = T )
+    predict_testNN = compute(NN,predict(trainParam, testNN)[,c(1:(ncol(set.test)-1))])
+                           
+    pred <- predict_testNN$net.result*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)])
+    pred[pred>0,] <- exp(1)^log(pred[pred>0,])
+    pred[pred<0] <- -exp(1)^log(abs(pred[pred<0,]))
+    
+    denormalizedPredictions <- pred
+    
+    RMSE.NN [i] = (sum((testNN[,ncol(set.test)] - denormalizedPredictions)^2) / nrow(set.test)) ^ 0.5
+  }
+  List[[j]] = RMSE.NN
+}
+Matrix.RMSE = do.call(cbind, List)
+Matrix.RMSE
+
+
+#method 2
+#https://rpubs.com/sergiomora123/Bitcoin_nnet
+#would like to collapse this to set.train but for some reason throws a warning message if I do that. (of course set.train is later)
 
 # derive the best neural network model using rmse criteria 
 best.network<-matrix(c(5,0.5))
@@ -210,8 +358,8 @@ for (i in 5:15)
   for (j in 1:3) 
     {
   #j=1
-  random <- sample(nrow(set.train),nrow(set.train)*1.25,replace=TRUE)
-  set.fit <- nnet(Return ~ RSI + CCI + MACD + WILL + STOCHK + STOCHD + AR + SAR + CMF + dn + mavg + up + pctB, data = set.train[random,], 
+  
+  set.fit <- nnet(frmla, data = set.train, 
                       #maxit=1000, MaxNWts=84581, size=i, decay=0.01*j, linout = 1)
                   maxit=1000, size=i, MaxNWts=(ncol(data2))^(i+1), decay=0.01*j, linout = 1)
   
@@ -233,7 +381,7 @@ Testdata <- cbind(InputTest,TargetTest)
 colnames(Testdata) <- c("RSI","CCI","MACD","WILL","STOCHK","STOCHD", "AR", "SAR", "CMF", "dn", "mavg", "up", "pctB", "Return")
 
 # fit the best model on test data
-set.fit <- nnet(Return ~ RSI + CCI + MACD + WILL + STOCHK + STOCHD + AR + SAR + CMF + dn + mavg + up + pctB, data = trainingdata, 
+set.fit <- nnet(frmla, data = trainingdata, 
                     maxit=1000, MaxNWts=84581, size=best.network[1,1], decay=0.1*best.network[2,1], linout = 1) 
 
 set.predict1 <- predict(set.fit, newdata = Testdata)
@@ -241,7 +389,7 @@ set.predict1 <- predict(set.fit, newdata = Testdata)
 #candidate for parallelization
 # repeat and average the model 20 times  
 for (i in 1:20) {
-  set.fit <- nnet(Return ~ RSI + CCI + MACD + WILL + STOCHK + STOCHD + AR + SAR + CMF + dn + mavg + up + pctB, data = trainingdata, 
+  set.fit <- nnet(frmla, data = trainingdata, 
                       maxit=1000, size=best.network[1,1], decay=0.1*best.network[2,1], linout = 1) 
   
   set.predict<- predict(set.fit, newdata = Testdata)
