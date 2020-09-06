@@ -392,6 +392,7 @@ best.rmse<-1
 #j is for decay
 for (i in 5:15) 
   #i=5
+{
   #for (j in 1:3) 
     {
   
@@ -432,7 +433,7 @@ for (i in 5:15)
       best.rmse<-set.rmse  
     }
   }
-
+}
 # create the Input and Target matrix for test
 
 InputTest<-matrix(cbind(rsi[upper:(upper+holdOutSize)], cci[upper:(upper+holdOutSize)], macd[upper:(upper+holdOutSize)], will[upper:(upper+holdOutSize)], stochK[upper:(upper+holdOutSize)], stochD[upper:(upper+holdOutSize)], ar[upper:(upper+holdOutSize)], sar[upper:(upper+holdOutSize)], cmf[upper:(upper+holdOutSize)],bbands[upper:(upper+holdOutSize)]),nrow=holdOutSize+1)
@@ -463,6 +464,24 @@ for (i in 1:20) {
 }
 
 set.predict1 <- set.predict1*sd(trainingdata[,ncol(trainingdata)])+mean(trainingdata[,ncol(trainingdata)])
+
+pred <- set.predict1
+
+pred[pred>0] <- exp(1)^log(pred[pred>0,])
+pred[pred<0] <- -exp(1)^log(abs(pred[pred<0,]))
+
+set.predict1 <- pred
+
+prep <- Testdata[,"Return"]
+
+pred <- data.frame(prep)
+pred[pred>0,] <- exp(1)^log(pred[pred>0,])
+pred[pred<0] <- -exp(1)^log(abs(pred[pred<0,]))
+
+invertLogTest <- pred
+
+plot(unlist(invertLogTest),unlist(set.predict1))
+abline(lm(unlist(invertLogTest)~unlist(set.predict1)))
 
 # calculate the buy-and-hold benchmark strategy and neural network profit on the test dataset
 money<-matrix(0,31)
