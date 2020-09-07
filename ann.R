@@ -27,6 +27,7 @@ library(boot)
 library(plyr)
 library(FCNN4R)
 library(RSNNS)
+library(IKTrading)
 ncores <- detectCores(all.tests = FALSE, logical = TRUE)
 #system("mkdir -p /home/rstudio/dev-DailyStockReport")
 #system("scp rstudio:/home/rstudio/dev-DailyStockReport/customRules.R /home/rstudio/dev-DailyStockReport")
@@ -147,7 +148,7 @@ rm(temp)
 
 #this is where I'll parallelize
 
-chosen <- "GOOG"
+chosen <- "GSPC"
 data <- get(chosen)
 
 data2<-data
@@ -161,28 +162,47 @@ set.lr<-diff(log(price))
 
 # generate technical indicators 
 rsi<-RSI(price)
-MACD <- MACD(price)
-adx <- ADX(HLC) 
+
+ema.50 <-   EMA(data[,"Close"], 50)
+ema.200 <-   EMA(data[,"Close"], 200)
+EVWMA <- EVWMA(data$Adjusted, volume=data$Volume)
+MACD <- MACD(data$Adjusted, volume=data$Volume, nFast = 12, nSlow = 26, nSig = 9, maType=VWAP)
+adx <- ADX(HLC, n=20, multiple=2) 
+tdi <- TDI(data$Adjusted, n=20, multiple=2)
+aroon <- aroon(HLC(data)[,c("High","Low")], n = 20)
+vhf <- VHF(data$Close, n=28)
+rsiMA1 <- RSI(data$Adjusted, n=14, maType="WMA", wts=data[,"Volume"])
+rsiMA2 <- RSI(data$Adjusted, n=14, maType=list(maUp=list(EMA,ratio=1/5),maDown=list(WMA,wts=1:10)))
+stoch2MA <- stoch( data[,c("High","Low","Close")],maType=list(list(SMA), list(EMA, wilder=TRUE), list(SMA)) )
+stochWPR <- WPR(data[,c("High","Low","Close")], n=14)
+smi <- SMI(HLC,n = 13, nFast = 2, nSlow = 25, nSig = 9, bounded = TRUE)
+cmo <- CMO(data[,"Close"], n=14)
+cci <- CCI(data[,c("High","Low","Close")],volume=data$Volume,maType=VWAP,c = 0.015)
+bbands <- BBands(HLC, volume=data$Volume, n=20, maType=VWAP, sd=2)
+dc <- DonchianChannel( data[,c("High","Low")], n=10, include.lag=TRUE )
+atr <- ATR(data[,c("High","Low","Close")], n=14)
+cmf <- CMF(data2, volume=data2$Volume,n=20)
+obv <- OBV(data[,"Close"], data[,"Volume"])
+mfi <- MFI(data[,c("High","Low","Close")], data[,"Volume"])
 will<-williamsAD(HLC)
 cci<-CCI(HLC)
-smi <- SMI(HLC,n = 13, nFast = 2, nSlow = 25, nSig = 9, bounded = TRUE)
-STOCH<-stoch(HLC)
+ichimoku <- ichimoku(data, nFast = 9, nMed = 26, nSlow = 52)
 ar <- autoregressor(WMA(data2[,"Adjusted"], wts = data2[,"Volume"]))
 sar <- TTR::SAR(HLC)
+
 colnames(sar) <- c("SAR")
-cmf <- CMF(data2, volume=data2$Volume,n=20)
 colnames(cmf) <- c("CMF")
-bbands <- BBands(HLC, volume=data$Volume, n=20, maType=VWAP, sd=2)
+
 nextDay <- matrix(lag(set.lr,1))
 colnames(nextDay) <- c("Return")
 
-TTRs <- cbind(rsi, MACD, adx, smi, will, cci, STOCH, ar, sar, cmf, bbands, nextDay)
+TTRs <- cbind(ema.50, ema.200, EVWMA, MACD, adx, tdi, aroon, vhf, rsiMA1,rsiMA2 ,stoch2MA, stochWPR, smi, cmo, cci, bbands,dc, atr,cmf, ar, sar, cmf, obv, mfi, will, cci, ichimoku, ar, sar, nextDay)
 
 nr <- nrow(price)
 
-#start at 34
-trainSetIndex <- sort(sample(34:(nr-1),nrow(price[34:(nr-1)])*.8))
-testSetIndex <- c(34:(nr-1))[(c(34:(nr-1))) %in% c(trainSetIndex)==FALSE]
+#start at 200
+trainSetIndex <- sort(sample(200:(nr-1),nrow(price[200:(nr-1)])*.8))
+testSetIndex <- c(200:(nr-1))[(c(200:(nr-1))) %in% c(trainSetIndex)==FALSE]
 
 # split the dataset 90-10% ratio
 #sorted list but missing some elements
@@ -240,7 +260,7 @@ if(FALSE)
 # derive the best neural network model using rmse criteria 
 #best.network<-matrix(c(5,0.5))
 best.network<-matrix(c(5))
-#https://stackoverflow.com/questions/17105979/i-get-error-error-in-nnet-defaultx-y-w-too-many-77031-weights-whi/17107134
+#https://stackoverflow.com/questions/17105979/i-get-error-error-in-nnet-defaultx-y-w-too-many-77031-weights-whi/171071200
 
 #cross validated
 #parallelize
@@ -252,7 +272,8 @@ numResamples <- 5
 
 #clusterExport(cl, ls(all.names=TRUE), envir = .GlobalEnv)
 
-rmses <- pbmclapply (5:(ncol(set.train)+1), function(i) 
+#rmses <- pbmclapply (5:(ncol(set.train)+1), function(i)
+rmses <- pbmclapply (5:10, function(i) 
   #i=5
 {
   #print(i)
@@ -318,6 +339,9 @@ for(i in 5:(ncol(set.train)+1)-4)
     
   }
 }
+
+plot(unlist(lapply(rmses, `[[`, 1)),unlist(lapply(rmses, `[[`, 2)),type="l")
+
 best.network
 # create the Input and Target matrix for test
 #best.network <-7
