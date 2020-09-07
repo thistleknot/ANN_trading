@@ -95,18 +95,18 @@ for(it in 1:length(symbolstring1))
 
 #adjusted
 for(it in 1:length(symbolstring1))
-{x=symbolstring1[it]
-set <- data.frame(quantmod::adjustOHLC(as.xts(as.data.table(get(x)[,c("Open","High","Low","Close","Volume","Adjusted")])),use.Adjusted=TRUE,symbol.name=x))
-d <- data.frame(as.Date(rownames(set)))[,,drop=FALSE]
-colnames(d) <- "Date"
-set <- cbind(d,set)
-
-temp <- set
-rm(list=symbolstring1[it])
-assign(symbolstring1[it],temp)
-rm(set)
-rm(temp)
-rm(d)
+{ x=symbolstring1[it]
+  set <- data.frame(quantmod::adjustOHLC(as.xts(as.data.table(get(x)[,c("Open","High","Low","Close","Volume","Adjusted")])),use.Adjusted=TRUE,symbol.name=x))
+  d <- data.frame(as.Date(rownames(set)))[,,drop=FALSE]
+  colnames(d) <- "Date"
+  set <- cbind(d,set)
+  
+  temp <- set
+  rm(list=symbolstring1[it])
+  assign(symbolstring1[it],temp)
+  rm(set)
+  rm(temp)
+  rm(d)
 }
 
 adjustedDF <- pbmclapply(symbolstring1, function(x)
@@ -172,7 +172,7 @@ tdi <- TDI(data$Adjusted, n=20, multiple=2)
 aroon <- aroon(HLC(data)[,c("High","Low")], n = 20)
 vhf <- VHF(data$Close, n=28)
 rsiMA1 <- RSI(data$Adjusted, n=14, maType="WMA", wts=data[,"Volume"])
-rsiMA2 <- RSI(data$Adjusted, n=14, maType=list(maUp=list(EMA,ratio=1/5),maDown=list(WMA,wts=1:10)))
+rsiMA2 <- RSI(data$Adjusted, maType=list(maUp=list(EMA, wilder=TRUE),maDown=list(WMA,wts=data$Volume)))
 stoch2MA <- stoch( data[,c("High","Low","Close")],maType=list(list(SMA), list(EMA, wilder=TRUE), list(SMA)) )
 stochWPR <- WPR(data[,c("High","Low","Close")], n=14)
 smi <- SMI(HLC,n = 13, nFast = 2, nSlow = 25, nSig = 9, bounded = TRUE)
@@ -193,7 +193,7 @@ sar <- TTR::SAR(HLC)
 colnames(sar) <- c("SAR")
 colnames(cmf) <- c("CMF")
 
-nextDay <- matrix(lag(set.lr,1))
+nextDay <- matrix(lag(set.lr,-1))
 colnames(nextDay) <- c("Return")
 
 TTRs <- cbind(ema.50, ema.200, EVWMA, MACD, adx, tdi, aroon, vhf, rsiMA1,rsiMA2 ,stoch2MA, stochWPR, smi, cmo, cci, bbands,dc, atr,cmf, ar, sar, cmf, obv, mfi, will, cci, ichimoku, ar, sar, nextDay)
@@ -201,8 +201,9 @@ TTRs <- cbind(ema.50, ema.200, EVWMA, MACD, adx, tdi, aroon, vhf, rsiMA1,rsiMA2 
 nr <- nrow(price)
 
 #start at 200
-trainSetIndex <- sort(sample(200:(nr-1),nrow(price[200:(nr-1)])*.8))
-testSetIndex <- c(200:(nr-1))[(c(200:(nr-1))) %in% c(trainSetIndex)==FALSE]
+#-23 due to lag of donchian channel
+trainSetIndex <- sort(sample(200:(nr-26),nrow(price[200:(nr-26)])*.8))
+testSetIndex <- c(200:(nr-26))[(c(200:(nr-26))) %in% c(trainSetIndex)==FALSE]
 
 # split the dataset 90-10% ratio
 #sorted list but missing some elements
@@ -271,9 +272,9 @@ set.seed(5)
 numResamples <- 5
 
 #clusterExport(cl, ls(all.names=TRUE), envir = .GlobalEnv)
-
+#View(trainingdata)
 #rmses <- pbmclapply (5:(ncol(set.train)+1), function(i)
-rmses <- pbmclapply (5:10, function(i) 
+rmses <- pbmclapply (5:12, function(i) 
   #i=5
 {
   #print(i)
@@ -329,7 +330,7 @@ rmses <- pbmclapply (5:10, function(i)
 )
 
 best.rmse<-1
-for(i in 5:(ncol(set.train)+1)-4)
+for(i in 1:length(rmses))
 {#i=1
   print(i)
   if (rmses[[i]][[2]]<best.rmse) {
@@ -355,7 +356,7 @@ traindataParam <- caret::preProcess(as.matrix(trainingdata))
 #clusterExport(cl, ls(all.names=TRUE), envir = .GlobalEnv)
 #candidate for parallelization
 # repeat and average the model 20 times  
-set.predict <- pbmclapply (1:10, function(x) {
+set.predict <- pbmclapply (1:5, function(x) {
   #set.fit <- nnet(frmla, data = trainingdata, maxit=1000, size=best.network[1,1], decay=0.1*best.network[2,1], linout = 1) 
   set.fit <- neuralnet(frmla, predict(traindataParam, trainingdata), hidden = best.network , linear.output = T, stepmax = 1e6, algorithm='rprop-')
   
