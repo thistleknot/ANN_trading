@@ -141,7 +141,7 @@ rm(temp)
 
 #this is where I'll parallelize
 
-chosen <- "GSPC"
+chosen <- "GOOG"
 data <- get(chosen)
 
 data2<-data
@@ -222,6 +222,7 @@ frmla <- as.formula(paste(colnames(set.train)[ncol(set.train)], paste(colnames(s
 trainNN = neuralnet(frmla, predict(trainParam, set.train), hidden = ncol(set.train) , linear.output = T )
 
 #mlp
+if(FALSE)
 {
   model = model <- mlp( predict(trainParam, set.train)[,1:(ncol(set.train)-1)], predict(trainParam, set.train)[,(ncol(set.train))], size=5, learnFuncParams=c(0.1), maxit = 50, inputsTest=predict(trainParam, set.test)[,1:(ncol(set.test)-1)], targetsTest=predict(trainParam, set.test)[,(ncol(set.test))]) 
   summary(model)
@@ -248,8 +249,8 @@ trainNN = neuralnet(frmla, predict(trainParam, set.train), hidden = ncol(set.tra
 }
 
 
-View(trainNN)
-plot(trainNN)
+#View(trainNN)
+#plot(trainNN)
 
 #apply training normalization param's to testdata prior to
 predict_testNN = compute(trainNN, predict(trainParam, set.test)[,1:(ncol(set.test)-1)])
@@ -432,7 +433,7 @@ money[1,1]<-100
 money2[1,1]<-100
 for (i in 2:31) {
   #print(i)
-  #i=2
+  #i=4
   if (set.predict1[i-1]<0) {
     direction1<--1  
   } else {
@@ -442,11 +443,18 @@ for (i in 2:31) {
   } else {
     direction2<-1 }
   if ((direction1-direction2)==0) {
+    #print((1+abs(TargetTest[i-1]))  )
+    #money[i,1]<-money[i-1,1]*(1+abs(TargetTest[i-1]))  
+    #gain return on correct guesses
     money[i,1]<-money[i-1,1]*(1+abs(TargetTest[i-1]))  
   } else {
-    money[i,1]<-money[i-1,1]*(1-abs(TargetTest[i-1])) }
+    #print((1-abs(TargetTest[i-1])) )
+    #lose return on incorrect guesses, but... incorrect guesses is when it goes down.
+    money[i,1]<-money[i-1,1]*(1-abs(TargetTest[i-1]*2)) }
   money2[i,1]<-100*(as.numeric(price[upper+i-1])/as.numeric(price[upper]))
 }
+#By always guessing 1, you match the market?
+#cbind(money,money2)
 
 #plot benchmark and neural network profit on the test dataset
 x<-1:31
