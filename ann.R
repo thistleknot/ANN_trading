@@ -1,12 +1,19 @@
-run_librarys <- function() {
+#ncores <- detectCores(all.tests = FALSE, logical = TRUE)
+primary <- 'rstudio'
+slave <- 'rparallel4'
+IPs <- list(list(host=primary, user='rstudio', ncore=4), list(host=slave, user='rstudio', ncore=4))
+spec <- lapply(IPs, function(IP) rep(list(list(host=IP$host, user=IP$user)), IP$ncore))
+spec <- unlist(spec, recursive=FALSE)
+stopCluster(cl)
+cl <- makeCluster(master=primary, spec=spec)
+clusterEvalQ(cl, {
+  ## set up each worker.  Could also use clusterExport()
   library(readxl)
   library(readr)
   library(quantmod)
   library(xts)
   library(zoo)
   library(forecast)
-  #library(quantstrat)
-  #library(Quandl)
   library(TTR)
   library(caret)
   library(nnet)
@@ -19,12 +26,10 @@ run_librarys <- function() {
   library(boot)
   library(plyr)
   library(FCNN4R)
-  library(RSNNS)
-  print("end........")
-}
-run_librarys()
-
-ncores <- detectCores(all.tests = FALSE, logical = TRUE)
+  library(RSNNS)					
+  #system("mkdir -p /home/rstudio/dev-DailyStockReport")
+  #system("scp rstudio:/home/rstudio/dev-DailyStockReport/customRules.R /home/rstudio/dev-DailyStockReport")
+})
 
 source("~/ANN/TradingDates.R")
 
@@ -45,9 +50,8 @@ autoregressor1  = function(x){
 }
 
 autoregressor = function(x){
-  ans = rollapply(x,28,FUN = autoregressor1,by.column=FALSE)
+  ans = rollapply(x,26,FUN = autoregressor1,by.column=FALSE)
   return (ans)}
-
 
 extract_year <- function (x_date)
 {
@@ -142,7 +146,7 @@ rm(temp)
 
 #this is where I'll parallelize
 
-chosen <- "GOOG"
+chosen <- "GOLD"
 data <- get(chosen)
 
 data2<-data
@@ -157,12 +161,11 @@ set.lr<-diff(log(price))
 # generate technical indicators 
 rsi<-RSI(price)
 MACD <- MACD(price)
-macd<-MACD[,1]
+adx <- ADX(HLC) 
 will<-williamsAD(HLC)
 cci<-CCI(HLC)
+smi <- SMI(HLC,n = 13, nFast = 2, nSlow = 25, nSig = 9, bounded = TRUE)
 STOCH<-stoch(HLC)
-stochK<-STOCH[,1]
-stochD<-STOCH[,2]
 ar <- autoregressor(WMA(data2[,"Adjusted"], wts = data2[,"Volume"]))
 sar <- TTR::SAR(HLC)
 colnames(sar) <- c("SAR")
@@ -172,13 +175,13 @@ bbands <- BBands(HLC, volume=data$Volume, n=20, maType=VWAP, sd=2)
 nextDay <- matrix(lag(set.lr,1))
 colnames(nextDay) <- c("Return")
 
-TTRs <- cbind(rsi, macd, will, cci, stochK, stochD, ar, sar, cmf, bbands, nextDay)
+TTRs <- cbind(rsi, MACD, adx, smi, will, cci, STOCH, ar, sar, cmf, bbands, nextDay)
 
 nr <- nrow(price)
 
-#start at 28
-trainSetIndex <- sort(sample(28:(nr-1),nrow(price[28:(nr-1)])*.8))
-testSetIndex <- c(28:(nr-1))[(c(28:(nr-1))) %in% c(trainSetIndex)==FALSE]
+#start at 34
+trainSetIndex <- sort(sample(34:(nr-1),nrow(price[34:(nr-1)])*.8))
+testSetIndex <- c(34:(nr-1))[(c(34:(nr-1))) %in% c(trainSetIndex)==FALSE]
   
 # split the dataset 90-10% ratio
 #sorted list but missing some elements
@@ -229,8 +232,6 @@ if(FALSE)
 
 #holdoutSet
 
-Testdata <- TTRs[28:nrow(TTRs),][-trainSetIndex,]
-
 #method 2
 #https://rpubs.com/sergiomora123/Bitcoin_nnet
 #would like to collapse this to set.train but for some reason throws a warning message if I do that. (of course set.train is later)
@@ -239,21 +240,23 @@ Testdata <- TTRs[28:nrow(TTRs),][-trainSetIndex,]
 #best.network<-matrix(c(5,0.5))
 best.network<-matrix(c(5))
 best.rmse<-1
-#https://stackoverflow.com/questions/17105979/i-get-error-error-in-nnet-defaultx-y-w-too-many-77031-weights-whi/17107128
+#https://stackoverflow.com/questions/17105979/i-get-error-error-in-nnet-defaultx-y-w-too-many-77031-weights-whi/17107134
 
 #cross validated
 #parallelize
 #i is used for size
 #j is for decay
+
 set.seed(5)
 for (i in 5:(ncol(set.train)+1)) 
-  #i=15
+  #i=5
 {
   print(i)
   numResamples <- 5
   #set.rmse <- matrix(NA,numResamples)
+  clusterExport(cl, ls(all.names=TRUE), envir = .GlobalEnv)
   
-  set.rmse <- mclapply (1:numResamples, function(x)
+  set.rmse <- clusterApplyLB (cl, 1:numResamples, function(x)
     {#j=4
     #print(j)
   
@@ -286,7 +289,8 @@ for (i in 5:(ncol(set.train)+1))
     denormalizedTrainPredictions <- pred
     
     return(sum((predict(trainParam,set.test)[,ncol(set.test)]*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)]) - denormalizedTrainPredictions)^2) / nrow(set.test)) ^ 0.5
-  },mc.cores=ncores)
+  }#mc.cores=(ncores-1)
+  )
   meanrmse <- mean(unlist(set.rmse))
   if (meanrmse<best.rmse) {
     best.network[1]<-i
@@ -304,9 +308,10 @@ Testdata<-TTRs[testSetIndex,]
 
 traindataParam <- caret::preProcess(as.matrix(trainingdata))
 
+clusterExport(cl, ls(all.names=TRUE), envir = .GlobalEnv)
 #candidate for parallelization
 # repeat and average the model 20 times  
-set.predict <- mclapply (1:5, function(x) {
+set.predict <- clusterApplyLB (cl, 1:10, function(x) {
   #set.fit <- nnet(frmla, data = trainingdata, maxit=1000, size=best.network[1,1], decay=0.1*best.network[2,1], linout = 1) 
   set.fit <- neuralnet(frmla, predict(traindataParam, trainingdata), hidden = best.network , linear.output = T, stepmax = 1e6, algorithm='rprop-')
   
@@ -314,8 +319,9 @@ set.predict <- mclapply (1:5, function(x) {
     predict(set.fit, newdata = predict(traindataParam, data.frame(Testdata))[,1:(ncol(Testdata)-1)])
     #)
   
-},mc.cores=ncores)
-
+}#,mc.cores=(ncores-1)
+)
+stopCluster(cl)
 set.predict1 <- data.frame(rowMeans(do.call(cbind, set.predict)))
 
 set.predict1 <- set.predict1*sd(trainingdata[,ncol(trainingdata)])+mean(trainingdata[,ncol(trainingdata)])
@@ -375,7 +381,7 @@ for (i in 2:31) {
 x<-1:31
 matplot(cbind(money, money2), type = "l", xaxt = "n", ylab = "")
 legend("topright", legend = c("Neural network","Benchmark"), pch = 19, col = c("black", "red"))
-axis(1, at = c(1,10,20,holdOutSize+1), lab  = row.names(data.frame(rsi[upper:(upper+holdOutSize),,drop=FALSE]))[c(1,10,20,holdOutSize+1)])
+axis(1, at = c(seq(1, to = nrow(Testdata), by=10)), lab  = row.names(data.frame(Testdata))[c(seq(1, to = nrow(Testdata), by=10))])
 
 box()
 mtext(side = 1, "Test dataset", line = 2)
