@@ -309,71 +309,6 @@ testDataNormalized[testDataNormalized<0] <- -exp(1)^log(abs(testDataNormalized[t
 plot(denormalizedTestPredictions,testDataNormalized)
 abline(lm(denormalizedTestPredictions~testDataNormalized))
 
-money<-matrix(0,31)
-#money2 is benchmark, actual price
-money2<-matrix(0,31)
-money[1,1]<-100
-money2[1,1]<-100
-for (i in 2:31) {
-  #print(i)
-  #i=2
-  if (denormalizedTestPredictions[i-1]<0) {
-    direction1<--1  
-  } else {
-    direction1<-1}
-  if (testDataNormalized[i-1]<0) {
-    direction2<--1  
-  } else {
-    direction2<-1 }
-  if ((direction1-direction2)==0) {
-    money[i,1]<-money[i-1,1]*(1+abs(testDataNormalized[i-1]))  
-  } else {
-    money[i,1]<-money[i-1,1]*(1-abs(testDataNormalized[i-1])) }
-  money2[i,1]<-100*(as.numeric(price[upper+i-1])/as.numeric(price[upper]))
-}
-
-#plot benchmark and neural network profit on the test dataset
-x<-1:31
-matplot(cbind(money, money2), type = "l", xaxt = "n", ylab = "")
-legend("topright", legend = c("Neural network","Benchmark"), pch = 19, col = c("black", "red"))
-axis(1, at = c(1,10,20,holdOutSize+1), lab  = row.names(data.frame(rsi[upper:(upper+holdOutSize),,drop=FALSE]))[c(1,10,20,holdOutSize+1)])
-
-box()
-mtext(side = 1, "Test dataset", line = 2)
-mtext(side = 2, "Investment value", line = 2)
-
-# Initialize variables
-set.seed(50)
-k = 100
-RMSE.NN = NULL
-
-# Fit neural network model within nested for loop
-#j is size of training set
-for(j in 10:65){
-  for (i in 1:k) {
-    #keep set.test as holdout
-    index = sample(1:nrow(set.train),j )
-    
-    trainNN = scaled[index,]
-    testNN = scaled[-index,]
-    
-    NN = neuralnet(frmla, predict(trainParam, set.train), hidden = ncol(set.train) , linear.output = T )
-    predict_testNN = compute(NN,predict(trainParam, testNN)[,c(1:(ncol(set.test)-1))])
-                           
-    pred <- predict_testNN$net.result*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)])
-    pred[pred>0,] <- exp(1)^log(pred[pred>0,])
-    pred[pred<0] <- -exp(1)^log(abs(pred[pred<0,]))
-    
-    denormalizedPredictions <- pred
-    
-    RMSE.NN [i] = (sum((testNN[,ncol(set.test)] - denormalizedPredictions)^2) / nrow(set.test)) ^ 0.5
-  }
-  List[[j]] = RMSE.NN
-}
-Matrix.RMSE = do.call(cbind, List)
-Matrix.RMSE
-
-
 #method 2
 #https://rpubs.com/sergiomora123/Bitcoin_nnet
 #would like to collapse this to set.train but for some reason throws a warning message if I do that. (of course set.train is later)
@@ -393,7 +328,9 @@ best.rmse<-1
 for (i in 5:15) 
   #i=5
 {
-  #for (j in 1:3) 
+  numResamples <- 5
+  set.rmse <- matrix(NA,numResamples)
+  for (j in 1:numResamples) 
     {
   
     trainIndex <- createDataPartition(set.lr[(lower+1):(holdOutBegin)], p=.9, list=F)
@@ -426,12 +363,14 @@ for (i in 5:15)
     
     denormalizedTrainPredictions <- pred
     
-    set.rmse <- (sum((set.test[,ncol(set.test)]*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)]) - denormalizedTrainPredictions)^2) / nrow(set.test)) ^ 0.5
-    if (set.rmse<best.rmse) {
-      best.network[1]<-i
-      #best.network[2,1]<-j
-      best.rmse<-set.rmse  
-    }
+    set.rmse[j] <- (sum((predict(trainParam,set.test)[,ncol(set.test)]*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)]) - denormalizedTrainPredictions)^2) / nrow(set.test)) ^ 0.5
+  }
+  meanrmse <- mean(set.rmse)
+  if (meanrmse<best.rmse) {
+    best.network[1]<-i
+    #best.network[2,1]<-j
+    best.rmse<-meanrmse  
+    
   }
 }
 # create the Input and Target matrix for test
@@ -453,15 +392,17 @@ set.predict1 <- predict(set.fit, newdata = predict(traindataParam, data.frame(Te
 
 #candidate for parallelization
 # repeat and average the model 20 times  
-for (i in 1:20) {
+for (i in 1:10) {
   #set.fit <- nnet(frmla, data = trainingdata, maxit=1000, size=best.network[1,1], decay=0.1*best.network[2,1], linout = 1) 
   set.fit <- neuralnet(frmla, predict(traindataParam, trainingdata), hidden = best.network , linear.output = F)
   
   set.predict <- predict(set.fit, newdata = predict(traindataParam, data.frame(Testdata))[,1:(ncol(Testdata)-1)])
   
   #set.predict<- predict(set.fit, newdata = Testdata)
-  set.predict1<-(set.predict1+set.predict)/2
+  set.predict1<-(set.predict1+set.predict)
 }
+
+set.predict1 <- set.predict1/11
 
 set.predict1 <- set.predict1*sd(trainingdata[,ncol(trainingdata)])+mean(trainingdata[,ncol(trainingdata)])
 
