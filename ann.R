@@ -7,7 +7,6 @@ run_librarys <- function() {
   library(forecast)
   #library(quantstrat)
   #library(Quandl)
-  #library(PerformanceAnalytics)
   library(TTR)
   library(caret)
   library(nnet)
@@ -24,6 +23,8 @@ run_librarys <- function() {
   print("end........")
 }
 run_librarys()
+
+ncores <- detectCores(all.tests = FALSE, logical = TRUE)
 
 source("~/ANN/TradingDates.R")
 
@@ -44,7 +45,7 @@ autoregressor1  = function(x){
 }
 
 autoregressor = function(x){
-  ans = rollapply(x,26,FUN = autoregressor1,by.column=FALSE)
+  ans = rollapply(x,28,FUN = autoregressor1,by.column=FALSE)
   return (ans)}
 
 
@@ -161,65 +162,43 @@ will<-williamsAD(HLC)
 cci<-CCI(HLC)
 STOCH<-stoch(HLC)
 stochK<-STOCH[,1]
-stochD<-STOCH[,1]
+stochD<-STOCH[,2]
 ar <- autoregressor(WMA(data2[,"Adjusted"], wts = data2[,"Volume"]))
 sar <- TTR::SAR(HLC)
 colnames(sar) <- c("SAR")
 cmf <- CMF(data2, volume=data2$Volume,n=20)
 colnames(cmf) <- c("CMF")
 bbands <- BBands(HLC, volume=data$Volume, n=20, maType=VWAP, sd=2)
+nextDay <- matrix(lag(set.lr,1))
+colnames(nextDay) <- c("Return")
 
-nr <- nrow(HLC)
-holdOutSize <- 29
-holdOutEnd <- nrow(HLC)
-holdOutBegin <- holdOutEnd-holdOutSize
-size <- 939-500
-upper <- nrow(HLC)-holdOutSize-1
-lower <- upper-size
-d <- 940-917
+TTRs <- cbind(rsi, macd, will, cci, stochK, stochD, ar, sar, cmf, bbands, nextDay)
 
+nr <- nrow(price)
+
+#start at 28
+trainSetIndex <- sort(sample(28:(nr-1),nrow(price[28:(nr-1)])*.8))
+testSetIndex <- c(28:(nr-1))[(c(28:(nr-1))) %in% c(trainSetIndex)==FALSE]
+  
 # split the dataset 90-10% ratio
 #sorted list but missing some elements
 
-#trainIndexes <- matrix(NA, (holdOutBegin)-(lower+1),10)
+trainingdata <- TTRs[trainSetIndex,]
 
-#View(trainIndexesList)
-#trainIndexesList <- mclapply(1:ncol(trainIndexes), function(x) { return(createDataPartition(set.lr[(lower+1):(holdOutBegin)], p=.9, list=F))})
+#double subset
 
-#trainFolds <- createFolds(set.lr[(lower+1):(holdOutBegin)], k=10, list=F)
-
-trainSet <- cbind(rsi[lower:upper], cci[lower:upper], macd[lower:upper], will[lower:upper], stochK[lower:upper], stochD[lower:upper], ar[lower:upper], sar[lower:upper], cmf[lower:upper], bbands[lower:upper])
-Input<-
-  (
-    matrix(
-      trainSet
-      ,nrow=size+1)
-  )
-
-trainTarget<-as.numeric(matrix(c(set.lr[(lower+1):(holdOutBegin)]), nrow=size+1))
-
-trainingdata <- cbind(Input,trainTarget)
-#View(trainingdata)
-
-trainIndex <- createDataPartition(set.lr[(lower+1):(holdOutBegin)], p=.9, list=F)
+trainIndex <- sort(sample(c(1:length(trainSetIndex)), length(trainSetIndex)*.9))
 
 set.train <- trainingdata[trainIndex, ]
 set.test <- trainingdata[-trainIndex, ]
 
-colnames(trainingdata) <- c(colnames(trainSet),"Return")
-colnames(set.train) <- colnames(trainingdata)
-colnames(set.test) <- colnames(trainingdata)
-
 #normalization
-trainParam <- caret::preProcess(set.train)
-scaled = predict(trainParam, set.train)
+trainParam <- caret::preProcess(as.matrix(set.train))
 
 #method 1
 #https://medium.com/@salsabilabasalamah/cross-validation-of-an-artificial-neural-network-f72a879ea6d5
 frmla <- as.formula(paste(colnames(set.train)[ncol(set.train)], paste(colnames(set.train)[1:(ncol(set.train)-1)], sep = "", 
                                                          collapse = " + "), sep = " ~ "))
-
-trainNN = neuralnet(frmla, predict(trainParam, set.train), hidden = ncol(set.train) , linear.output = T )
 
 #mlp
 if(FALSE)
@@ -248,67 +227,9 @@ if(FALSE)
                                                        method="402040", l=0.4, h=0.6))
 }
 
-
-#View(trainNN)
-#plot(trainNN)
-
-#apply training normalization param's to testdata prior to
-predict_testNN = compute(trainNN, predict(trainParam, set.test)[,1:(ncol(set.test)-1)])
-
-#predict(trainParam, set.test)
-
-#convert back
-#predict(trainParam, set.train)[,ncol(set.train)]*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)])
-
-#inverse of log
-pred <- predict_testNN$net.result*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)])
-pred[pred>0,] <- exp(1)^log(pred[pred>0,])
-pred[pred<0] <- -exp(1)^log(abs(pred[pred<0,]))
-
-denormalizedTrainPredictions <- pred
-
-plot(set.test[,ncol(set.test)], denormalizedTrainPredictions, col='red', pch=16, 
-     ylab = "Predicted Rating NN", xlab = "real rating", main="Real Rating vs Predict NN")
-abline(0,1)
-
-trainYNormalized <- set.test[,"Return"]
-trainYNormalized[trainYNormalized>0] <- exp(1)^log(trainYNormalized[trainYNormalized>0])
-trainYNormalized[trainYNormalized<0] <- -exp(1)^log(abs(trainYNormalized[trainYNormalized<0]))
-
-plot(denormalizedTrainPredictions,trainYNormalized)
-abline(lm(denormalizedTrainPredictions~trainYNormalized))
-
-#
-#log(10)
-#exp(1)^log(10)
-
-RMSE.NN = (sum((set.test[,ncol(set.test)] - denormalizedTrainPredictions)^2) / nrow(set.test)) ^ 0.5
-RMSE.NN
-
 #holdoutSet
 
-testSet <- cbind(rsi[upper:(upper+holdOutSize)], cci[upper:(upper+holdOutSize)], macd[upper:(upper+holdOutSize)], will[upper:(upper+holdOutSize)], stochK[upper:(upper+holdOutSize)], stochD[upper:(upper+holdOutSize)], ar[upper:(upper+holdOutSize)], sar[upper:(upper+holdOutSize)], cmf[upper:(upper+holdOutSize)],bbands[upper:(upper+holdOutSize)])
-InputTest<-matrix(testSet,nrow=holdOutSize+1)
-TargetTest<-matrix(c(set.lr[holdOutBegin:holdOutEnd]), nrow=holdOutSize+1)
-
-Testdata <- cbind(InputTest,TargetTest)
-colnames(Testdata) <- colnames(trainingdata)
-
-#apply training normalization param's to testdata
-predict_testNN = compute(trainNN, predict(trainParam, Testdata)[,c(1:(ncol(set.test)-1))])
-
-pred <- predict_testNN$net.result*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)])
-pred[pred>0,] <- exp(1)^log(pred[pred>0,])
-pred[pred<0] <- -exp(1)^log(abs(pred[pred<0,]))
-
-denormalizedTestPredictions <- pred
-
-testDataNormalized <- Testdata[,"Return"]
-testDataNormalized[testDataNormalized>0] <- exp(1)^log(testDataNormalized[testDataNormalized>0])
-testDataNormalized[testDataNormalized<0] <- -exp(1)^log(abs(testDataNormalized[testDataNormalized<0]))
-
-plot(denormalizedTestPredictions,testDataNormalized)
-abline(lm(denormalizedTestPredictions~testDataNormalized))
+Testdata <- TTRs[28:nrow(TTRs),][-trainSetIndex,]
 
 #method 2
 #https://rpubs.com/sergiomora123/Bitcoin_nnet
@@ -318,37 +239,36 @@ abline(lm(denormalizedTestPredictions~testDataNormalized))
 #best.network<-matrix(c(5,0.5))
 best.network<-matrix(c(5))
 best.rmse<-1
-#https://stackoverflow.com/questions/17105979/i-get-error-error-in-nnet-defaultx-y-w-too-many-77031-weights-whi/17107126
+#https://stackoverflow.com/questions/17105979/i-get-error-error-in-nnet-defaultx-y-w-too-many-77031-weights-whi/17107128
 
-#no type of randomization
-
-#needs to be cross validated
+#cross validated
 #parallelize
 #i is used for size
 #j is for decay
-for (i in 5:15) 
-  #i=5
+set.seed(5)
+for (i in 5:(ncol(set.train)+1)) 
+  #i=15
 {
+  print(i)
   numResamples <- 5
-  set.rmse <- matrix(NA,numResamples)
-  for (j in 1:numResamples) 
-    {
+  #set.rmse <- matrix(NA,numResamples)
   
-    trainIndex <- createDataPartition(set.lr[(lower+1):(holdOutBegin)], p=.9, list=F)
+  set.rmse <- mclapply (1:numResamples, function(x)
+    {#j=4
+    #print(j)
+  
+    trainIndex <- sample(1:nrow(trainingdata), nrow(trainingdata)*.9)
     
     set.train <- trainingdata[trainIndex, ]
     set.test <- trainingdata[-trainIndex, ]
     
-    colnames(trainingdata) <- c(colnames(trainSet),"Return")
-    colnames(set.train) <- colnames(trainingdata)
-    colnames(set.test) <- colnames(trainingdata)
-    
     #normalization
-    trainParam <- caret::preProcess(set.train)
+    trainParam <- caret::preProcess(as.matrix(set.train))
     
     #j=1
     
-    trainNN <- neuralnet(frmla, predict(trainParam, set.train), hidden = i , linear.output = F)
+    #/3 to avoid it growing too large
+    trainNN <- neuralnet(frmla, predict(trainParam, set.train), hidden = i , linear.output = T, stepmax = 1e7, algorithm='rprop-')
   
     #set.fit <- nnet(frmla, data = set.train, 
                         #maxit=1000, MaxNWts=84581, size=i, decay=0.01*j, linout = 1)
@@ -358,15 +278,16 @@ for (i in 5:15)
     
     #convert back
     #inverse of log
+    
     pred <- predict_testNN$net.result*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)])
     pred[pred>0,] <- exp(1)^log(pred[pred>0,])
     pred[pred<0] <- -exp(1)^log(abs(pred[pred<0,]))
     
     denormalizedTrainPredictions <- pred
     
-    set.rmse[j] <- (sum((predict(trainParam,set.test)[,ncol(set.test)]*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)]) - denormalizedTrainPredictions)^2) / nrow(set.test)) ^ 0.5
-  }
-  meanrmse <- mean(set.rmse)
+    return(sum((predict(trainParam,set.test)[,ncol(set.test)]*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)]) - denormalizedTrainPredictions)^2) / nrow(set.test)) ^ 0.5
+  },mc.cores=ncores)
+  meanrmse <- mean(unlist(set.rmse))
   if (meanrmse<best.rmse) {
     best.network[1]<-i
     #best.network[2,1]<-j
@@ -376,34 +297,26 @@ for (i in 5:15)
 }
 # create the Input and Target matrix for test
 
-InputTest<-matrix(cbind(rsi[upper:(upper+holdOutSize)], cci[upper:(upper+holdOutSize)], macd[upper:(upper+holdOutSize)], will[upper:(upper+holdOutSize)], stochK[upper:(upper+holdOutSize)], stochD[upper:(upper+holdOutSize)], ar[upper:(upper+holdOutSize)], sar[upper:(upper+holdOutSize)], cmf[upper:(upper+holdOutSize)],bbands[upper:(upper+holdOutSize)]),nrow=holdOutSize+1)
-TargetTest<-matrix(c(set.lr[holdOutBegin:holdOutEnd]), nrow=holdOutSize+1)
-
-Testdata <- cbind(InputTest,TargetTest)
-colnames(Testdata) <- colnames(trainingdata)
+Testdata<-TTRs[testSetIndex,]
 
 # fit the best model on test data
 #set.fit <- nnet(frmla, data = trainingdata, maxit=1000, MaxNWts=84581, size=best.network[1,1], decay=0.1*best.network[2,1], linout = 1) 
 
-traindataParam <- caret::preProcess(trainingdata)
-
-set.fit <- neuralnet(frmla, predict(traindataParam, trainingdata), hidden = best.network , linear.output = F)
-
-set.predict1 <- predict(set.fit, newdata = predict(traindataParam, data.frame(Testdata))[,1:(ncol(Testdata)-1)])
+traindataParam <- caret::preProcess(as.matrix(trainingdata))
 
 #candidate for parallelization
 # repeat and average the model 20 times  
-for (i in 1:10) {
+set.predict <- mclapply (1:5, function(x) {
   #set.fit <- nnet(frmla, data = trainingdata, maxit=1000, size=best.network[1,1], decay=0.1*best.network[2,1], linout = 1) 
-  set.fit <- neuralnet(frmla, predict(traindataParam, trainingdata), hidden = best.network , linear.output = F)
+  set.fit <- neuralnet(frmla, predict(traindataParam, trainingdata), hidden = best.network , linear.output = T, stepmax = 1e7, algorithm='rprop-')
   
-  set.predict <- predict(set.fit, newdata = predict(traindataParam, data.frame(Testdata))[,1:(ncol(Testdata)-1)])
+  #return(
+    predict(set.fit, newdata = predict(traindataParam, data.frame(Testdata))[,1:(ncol(Testdata)-1)])
+    #)
   
-  #set.predict<- predict(set.fit, newdata = Testdata)
-  set.predict1<-(set.predict1+set.predict)
-}
+},mc.cores=ncores)
 
-set.predict1 <- set.predict1/11
+set.predict1 <- data.frame(rowMeans(do.call(cbind, set.predict)))
 
 set.predict1 <- set.predict1*sd(trainingdata[,ncol(trainingdata)])+mean(trainingdata[,ncol(trainingdata)])
 
@@ -431,14 +344,17 @@ money<-matrix(0,31)
 money2<-matrix(0,31)
 money[1,1]<-100
 money2[1,1]<-100
+rownames(TargetTest[20]$id)
+
 for (i in 2:31) {
   #print(i)
   #i=4
-  if (set.predict1[i-1]<0) {
+  
+  if (set.predict1[i-1,]<0) {
     direction1<--1  
   } else {
     direction1<-1}
-  if (TargetTest[i-1]<0) {
+  if (TargetTest[i-1,]<0) {
     direction2<--1  
   } else {
     direction2<-1 }
@@ -451,7 +367,7 @@ for (i in 2:31) {
     #print((1-abs(TargetTest[i-1])) )
     #lose return on incorrect guesses, but... incorrect guesses is when it goes down.
     money[i,1]<-money[i-1,1]*(1-abs(TargetTest[i-1]*2)) }
-  money2[i,1]<-100*(as.numeric(price[upper+i-1])/as.numeric(price[upper]))
+  money2[i,1]<-100*(as.numeric(price[rownames(data.frame(TargetTest))[i-1],])/as.numeric(price[rownames(data.frame(TargetTest))[1],]))
 }
 #By always guessing 1, you match the market?
 #cbind(money,money2)
