@@ -1,35 +1,36 @@
-#ncores <- detectCores(all.tests = FALSE, logical = TRUE)
-primary <- 'rstudio'
-slave <- 'rparallel4'
-IPs <- list(list(host=primary, user='rstudio', ncore=4), list(host=slave, user='rstudio', ncore=4))
-spec <- lapply(IPs, function(IP) rep(list(list(host=IP$host, user=IP$user)), IP$ncore))
-spec <- unlist(spec, recursive=FALSE)
-stopCluster(cl)
-cl <- makeCluster(master=primary, spec=spec)
-clusterEvalQ(cl, {
-  ## set up each worker.  Could also use clusterExport()
-  library(readxl)
-  library(readr)
-  library(quantmod)
-  library(xts)
-  library(zoo)
-  library(forecast)
-  library(TTR)
-  library(caret)
-  library(nnet)
-  library(parallel)
-  library(lubridate)
-  library(PerformanceAnalytics)
-  library(data.table)
-  library(imputeTS)
-  library(neuralnet)
-  library(boot)
-  library(plyr)
-  library(FCNN4R)
-  library(RSNNS)					
-  #system("mkdir -p /home/rstudio/dev-DailyStockReport")
-  #system("scp rstudio:/home/rstudio/dev-DailyStockReport/customRules.R /home/rstudio/dev-DailyStockReport")
-})
+#primary <- 'rstudio'
+#slave <- 'rparallel4'
+#IPs <- list(list(host=primary, user='rstudio', ncore=4), list(host=slave, user='rstudio', ncore=4))
+#spec <- lapply(IPs, function(IP) rep(list(list(host=IP$host, user=IP$user)), IP$ncore))
+#spec <- unlist(spec, recursive=FALSE)
+#stopCluster(cl)
+#cl <- makeCluster(master=primary, spec=spec)
+#clusterEvalQ(cl, {
+## set up each worker.  Could also use clusterExport()
+library(readxl)
+library(readr)
+library(quantmod)
+library(xts)
+library(zoo)
+library(forecast)
+library(TTR)
+library(caret)
+library(nnet)
+library(parallel)
+library(pbmcapply)
+library(lubridate)
+library(PerformanceAnalytics)
+library(data.table)
+library(imputeTS)
+library(neuralnet)
+library(boot)
+library(plyr)
+library(FCNN4R)
+library(RSNNS)
+ncores <- detectCores(all.tests = FALSE, logical = TRUE)
+#system("mkdir -p /home/rstudio/dev-DailyStockReport")
+#system("scp rstudio:/home/rstudio/dev-DailyStockReport/customRules.R /home/rstudio/dev-DailyStockReport")
+#})
 
 source("~/ANN/TradingDates.R")
 
@@ -107,7 +108,7 @@ rm(temp)
 rm(d)
 }
 
-adjustedDF <- mclapply(symbolstring1, function(x)
+adjustedDF <- pbmclapply(symbolstring1, function(x)
 {
   return(get(x))
 })
@@ -146,7 +147,7 @@ rm(temp)
 
 #this is where I'll parallelize
 
-chosen <- "GOLD"
+chosen <- "GOOG"
 data <- get(chosen)
 
 data2<-data
@@ -182,7 +183,7 @@ nr <- nrow(price)
 #start at 34
 trainSetIndex <- sort(sample(34:(nr-1),nrow(price[34:(nr-1)])*.8))
 testSetIndex <- c(34:(nr-1))[(c(34:(nr-1))) %in% c(trainSetIndex)==FALSE]
-  
+
 # split the dataset 90-10% ratio
 #sorted list but missing some elements
 
@@ -201,7 +202,7 @@ trainParam <- caret::preProcess(as.matrix(set.train))
 #method 1
 #https://medium.com/@salsabilabasalamah/cross-validation-of-an-artificial-neural-network-f72a879ea6d5
 frmla <- as.formula(paste(colnames(set.train)[ncol(set.train)], paste(colnames(set.train)[1:(ncol(set.train)-1)], sep = "", 
-                                                         collapse = " + "), sep = " ~ "))
+                                                                      collapse = " + "), sep = " ~ "))
 
 #mlp
 if(FALSE)
@@ -227,7 +228,7 @@ if(FALSE)
   
   #confusion matrix with 402040-method
   confusionMatrix(predict(trainParam, set.train)[,(ncol(set.train))], encodeClassLabels(fitted.values(model),
-                                                       method="402040", l=0.4, h=0.6))
+                                                                                        method="402040", l=0.4, h=0.6))
 }
 
 #holdoutSet
@@ -239,7 +240,6 @@ if(FALSE)
 # derive the best neural network model using rmse criteria 
 #best.network<-matrix(c(5,0.5))
 best.network<-matrix(c(5))
-best.rmse<-1
 #https://stackoverflow.com/questions/17105979/i-get-error-error-in-nnet-defaultx-y-w-too-many-77031-weights-whi/17107134
 
 #cross validated
@@ -248,22 +248,32 @@ best.rmse<-1
 #j is for decay
 
 set.seed(5)
-for (i in 5:(ncol(set.train)+1)) 
+numResamples <- 5
+
+#clusterExport(cl, ls(all.names=TRUE), envir = .GlobalEnv)
+
+rmses <- pbmclapply (5:(ncol(set.train)+1), function(i) 
   #i=5
 {
-  print(i)
-  numResamples <- 5
+  #print(i)
+  
   #set.rmse <- matrix(NA,numResamples)
-  clusterExport(cl, ls(all.names=TRUE), envir = .GlobalEnv)
   
-  set.rmse <- clusterApplyLB (cl, 1:numResamples, function(x)
-    {#j=4
+  trainIndex <- sample(1:nrow(trainingdata), nrow(trainingdata)*.5)
+  
+  set.rmse <- lapply (1:numResamples, function(x)
+  {#j=4
     #print(j)
-  
-    trainIndex <- sample(1:nrow(trainingdata), nrow(trainingdata)*.9)
     
-    set.train <- trainingdata[trainIndex, ]
-    set.test <- trainingdata[-trainIndex, ]
+    if(x==1)
+    { 
+      set.train <- trainingdata[trainIndex, ]
+      set.test <- trainingdata[-trainIndex, ]
+    }else
+    {
+      set.train <- trainingdata[-trainIndex, ]
+      set.test <- trainingdata[trainIndex, ]
+    }
     
     #normalization
     trainParam <- caret::preProcess(as.matrix(set.train))
@@ -272,10 +282,10 @@ for (i in 5:(ncol(set.train)+1))
     
     #/3 to avoid it growing too large
     trainNN <- neuralnet(frmla, predict(trainParam, set.train), hidden = i , linear.output = T, stepmax = 1e7, algorithm='rprop-')
-  
+    
     #set.fit <- nnet(frmla, data = set.train, 
-                        #maxit=1000, MaxNWts=84581, size=i, decay=0.01*j, linout = 1)
-                    #maxit=1000, size=i, MaxNWts=(ncol(data2))^(i+1), decay=0.01*j, linout = 1)
+    #maxit=1000, MaxNWts=84581, size=i, decay=0.01*j, linout = 1)
+    #maxit=1000, size=i, MaxNWts=(ncol(data2))^(i+1), decay=0.01*j, linout = 1)
     
     predict_testNN = compute(trainNN, predict(trainParam, set.test)[,1:(ncol(set.test)-1)])
     
@@ -289,16 +299,26 @@ for (i in 5:(ncol(set.train)+1))
     denormalizedTrainPredictions <- pred
     
     return(sum((predict(trainParam,set.test)[,ncol(set.test)]*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)]) - denormalizedTrainPredictions)^2) / nrow(set.test)) ^ 0.5
-  }#mc.cores=(ncores-1)
+  }#,mc.cores=(ncores)
   )
   meanrmse <- mean(unlist(set.rmse))
-  if (meanrmse<best.rmse) {
-    best.network[1]<-i
+  return(list(i,meanrmse))
+  
+},mc.cores=(ncores)
+)
+
+best.rmse<-1
+for(i in 5:(ncol(set.train)+1)-4)
+{#i=1
+  print(i)
+  if (rmses[[i]][[2]]<best.rmse) {
+    best.network[1]<-rmses[[i]][[1]]
     #best.network[2,1]<-j
-    best.rmse<-meanrmse  
+    best.rmse<-rmses[[i]][[2]]
     
   }
 }
+best.network
 # create the Input and Target matrix for test
 #best.network <-7
 Testdata<-TTRs[testSetIndex,]
@@ -308,20 +328,20 @@ Testdata<-TTRs[testSetIndex,]
 
 traindataParam <- caret::preProcess(as.matrix(trainingdata))
 
-clusterExport(cl, ls(all.names=TRUE), envir = .GlobalEnv)
+#clusterExport(cl, ls(all.names=TRUE), envir = .GlobalEnv)
 #candidate for parallelization
 # repeat and average the model 20 times  
-set.predict <- clusterApplyLB (cl, 1:10, function(x) {
+set.predict <- pbmclapply (1:10, function(x) {
   #set.fit <- nnet(frmla, data = trainingdata, maxit=1000, size=best.network[1,1], decay=0.1*best.network[2,1], linout = 1) 
   set.fit <- neuralnet(frmla, predict(traindataParam, trainingdata), hidden = best.network , linear.output = T, stepmax = 1e6, algorithm='rprop-')
   
   #return(
-    predict(set.fit, newdata = predict(traindataParam, data.frame(Testdata))[,1:(ncol(Testdata)-1)])
-    #)
+  predict(set.fit, newdata = predict(traindataParam, data.frame(Testdata))[,1:(ncol(Testdata)-1)])
+  #)
   
-}#,mc.cores=(ncores-1)
+},mc.cores=(ncores)
 )
-stopCluster(cl)
+#stopCluster(cl)
 set.predict1 <- data.frame(rowMeans(do.call(cbind, set.predict)))
 
 set.predict1 <- set.predict1*sd(trainingdata[,ncol(trainingdata)])+mean(trainingdata[,ncol(trainingdata)])
