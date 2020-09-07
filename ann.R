@@ -296,7 +296,7 @@ for (i in 5:(ncol(set.train)+1))
   }
 }
 # create the Input and Target matrix for test
-
+#best.network <-7
 Testdata<-TTRs[testSetIndex,]
 
 # fit the best model on test data
@@ -308,7 +308,7 @@ traindataParam <- caret::preProcess(as.matrix(trainingdata))
 # repeat and average the model 20 times  
 set.predict <- mclapply (1:5, function(x) {
   #set.fit <- nnet(frmla, data = trainingdata, maxit=1000, size=best.network[1,1], decay=0.1*best.network[2,1], linout = 1) 
-  set.fit <- neuralnet(frmla, predict(traindataParam, trainingdata), hidden = best.network , linear.output = T, stepmax = 1e7, algorithm='rprop-')
+  set.fit <- neuralnet(frmla, predict(traindataParam, trainingdata), hidden = best.network , linear.output = T, stepmax = 1e6, algorithm='rprop-')
   
   #return(
     predict(set.fit, newdata = predict(traindataParam, data.frame(Testdata))[,1:(ncol(Testdata)-1)])
@@ -344,7 +344,6 @@ money<-matrix(0,31)
 money2<-matrix(0,31)
 money[1,1]<-100
 money2[1,1]<-100
-rownames(TargetTest[20]$id)
 
 for (i in 2:31) {
   #print(i)
@@ -354,21 +353,21 @@ for (i in 2:31) {
     direction1<--1  
   } else {
     direction1<-1}
-  if (TargetTest[i-1,]<0) {
+  if (Testdata[i-1,"Return",]<0) {
     direction2<--1  
   } else {
     direction2<-1 }
   if ((direction1-direction2)==0) {
-    #print((1+abs(TargetTest[i-1]))  )
-    #money[i,1]<-money[i-1,1]*(1+abs(TargetTest[i-1]))  
+    
     #gain return on correct guesses
-    money[i,1]<-money[i-1,1]*(1+abs(TargetTest[i-1]))  
+    money[i,1]<-money[i-1,1]*(1+abs(Testdata[i-1,"Return",]))  
   } else {
-    #print((1-abs(TargetTest[i-1])) )
+    
     #lose return on incorrect guesses, but... incorrect guesses is when it goes down.
-    money[i,1]<-money[i-1,1]*(1-abs(TargetTest[i-1]*2)) }
-  money2[i,1]<-100*(as.numeric(price[rownames(data.frame(TargetTest))[i-1],])/as.numeric(price[rownames(data.frame(TargetTest))[1],]))
+    money[i,1]<-money[i-1,1]*(1-abs(Testdata[i-1,"Return",]*2)) }
+  money2[i,1]<-100*(as.numeric(price[rownames(data.frame(Testdata[i-1,"Return",])),])/as.numeric(price[rownames(data.frame(Testdata[1,"Return",])),]))
 }
+
 #By always guessing 1, you match the market?
 #cbind(money,money2)
 
