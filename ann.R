@@ -276,7 +276,7 @@ numResamples <- 5
 #clusterExport(cl, ls(all.names=TRUE), envir = .GlobalEnv)
 #View(trainingdata)
 #rmses <- pbmclapply (5:(ncol(set.train)+1), function(i)
-rmses <- pbmclapply (5:15, function(i) 
+rmses <- pbmclapply (5:20, function(i) 
   #i=5
 {
   #print(i)
@@ -300,7 +300,7 @@ rmses <- pbmclapply (5:15, function(i)
     #j=1
     
     #/3 to avoid it growing too large
-    trainNN <- neuralnet(frmla, pnorm(predict(trainParam, set.train)), hidden = i , linear.output = T, stepmax = 1e7, algorithm='rprop-')
+    trainNN <- neuralnet(frmla, pnorm(predict(trainParam, set.train)), hidden = i , linear.output = F, stepmax = 1e5, algorithm='rprop-')
     
     #set.fit <- nnet(frmla, data = set.train, 
     #maxit=1000, MaxNWts=84581, size=i, decay=0.01*j, linout = 1)
@@ -355,7 +355,7 @@ traindataParam <- caret::preProcess(as.matrix(trainingdata))
 # repeat and average the model 20 times  
 set.predict <- pbmclapply (1:5, function(x) {
   #set.fit <- nnet(frmla, data = trainingdata, maxit=1000, size=best.network[1,1], decay=0.1*best.network[2,1], linout = 1) 
-  set.fit <- neuralnet(frmla, pnorm(predict(traindataParam, trainingdata)), hidden = best.network , linear.output = T, stepmax = 1e6, algorithm='rprop-')
+  set.fit <- neuralnet(frmla, pnorm(predict(traindataParam, trainingdata)), hidden = best.network , linear.output = F, stepmax = 1e5, algorithm='rprop-')
   
   #return(
   qnorm(predict(set.fit, newdata = pnorm(predict(traindataParam, data.frame(Testdata))[,1:(ncol(Testdata)-1)])))
