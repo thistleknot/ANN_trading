@@ -276,7 +276,7 @@ numResamples <- 5
 #clusterExport(cl, ls(all.names=TRUE), envir = .GlobalEnv)
 #View(trainingdata)
 #rmses <- pbmclapply (5:(ncol(set.train)+1), function(i)
-rmses <- pbmclapply (5:12, function(i) 
+rmses <- pbmclapply (5:15, function(i) 
   #i=5
 {
   #print(i)
@@ -285,13 +285,14 @@ rmses <- pbmclapply (5:12, function(i)
   
   #trainIndex <- sample(1:nrow(trainingdata), nrow(trainingdata)*.5)
   
-  folds <- createFolds(1:nrow(trainingdata),k=numResamples)
+  #folds <- createFolds(1:nrow(trainingdata),k=numResamples)
+  folds=sample(rep(1:numResamples, length=nrow(trainingdata)))
   
-  set.rmse <- mclapply (1:numResamples, function(folds)
-  {#j=4
+  set.rmse <- lapply (1:numResamples, function(x)
+  {#x=1
     #print(j)
-    trainSet <- trainingdata[folds!=k,]
-    testSet <- trainingdata[folds==k,]
+    trainSet <- trainingdata[folds!=x,]
+    testSet <- trainingdata[folds==x,]
     
     #normalization
     trainParam <- caret::preProcess(as.matrix(set.train))
@@ -299,25 +300,25 @@ rmses <- pbmclapply (5:12, function(i)
     #j=1
     
     #/3 to avoid it growing too large
-    trainNN <- neuralnet(frmla, predict(trainParam, set.train), hidden = i , linear.output = T, stepmax = 1e7, algorithm='rprop-')
+    trainNN <- neuralnet(frmla, pnorm(predict(trainParam, set.train)), hidden = i , linear.output = T, stepmax = 1e7, algorithm='rprop-')
     
     #set.fit <- nnet(frmla, data = set.train, 
     #maxit=1000, MaxNWts=84581, size=i, decay=0.01*j, linout = 1)
     #maxit=1000, size=i, MaxNWts=(ncol(data2))^(i+1), decay=0.01*j, linout = 1)
     
-    predict_testNN = compute(trainNN, predict(trainParam, set.test)[,1:(ncol(set.test)-1)])
+    predict_testNN = compute(trainNN, pnorm(predict(trainParam, set.test)[,1:(ncol(set.test)-1)]))
     
     #convert back
     #inverse of log
     
-    pred <- predict_testNN$net.result*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)])
+    pred <- qnorm(predict_testNN$net.result)*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)])
     pred[pred>0,] <- exp(1)^log(pred[pred>0,])
     pred[pred<0] <- -exp(1)^log(abs(pred[pred<0,]))
     
     denormalizedTrainPredictions <- pred
     
     return(sum((predict(trainParam,set.test)[,ncol(set.test)]*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)]) - denormalizedTrainPredictions)^2) / nrow(set.test)) ^ 0.5
-  },mc.cores=(ncores)
+  }#,mc.cores=(ncores)
   )
   meanrmse <- mean(unlist(set.rmse))
   return(list(i,meanrmse))
@@ -354,10 +355,10 @@ traindataParam <- caret::preProcess(as.matrix(trainingdata))
 # repeat and average the model 20 times  
 set.predict <- pbmclapply (1:5, function(x) {
   #set.fit <- nnet(frmla, data = trainingdata, maxit=1000, size=best.network[1,1], decay=0.1*best.network[2,1], linout = 1) 
-  set.fit <- neuralnet(frmla, predict(traindataParam, trainingdata), hidden = best.network , linear.output = T, stepmax = 1e6, algorithm='rprop-')
+  set.fit <- neuralnet(frmla, pnorm(predict(traindataParam, trainingdata)), hidden = best.network , linear.output = T, stepmax = 1e6, algorithm='rprop-')
   
   #return(
-  predict(set.fit, newdata = predict(traindataParam, data.frame(Testdata))[,1:(ncol(Testdata)-1)])
+  qnorm(predict(set.fit, newdata = pnorm(predict(traindataParam, data.frame(Testdata))[,1:(ncol(Testdata)-1)])))
   #)
   
 },mc.cores=(ncores)
