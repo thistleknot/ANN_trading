@@ -148,7 +148,7 @@ rm(temp)
 
 #this is where I'll parallelize
 
-chosen <- "GSPC"
+chosen <- "GOLD"
 data <- get(chosen)
 
 data2<-data
@@ -209,6 +209,8 @@ testSetIndex <- c(200:(nr-26))[(c(200:(nr-26))) %in% c(trainSetIndex)==FALSE]
 #sorted list but missing some elements
 
 trainingdata <- TTRs[trainSetIndex,]
+#View(trainingdata)
+colnames(trainingdata)
 
 #double subset
 
@@ -283,19 +285,13 @@ rmses <- pbmclapply (5:12, function(i)
   
   trainIndex <- sample(1:nrow(trainingdata), nrow(trainingdata)*.5)
   
-  set.rmse <- lapply (1:numResamples, function(x)
+  folds <- createFolds(1:nrow(trainingdata),k=numResamples)
+  
+  set.rmse <- mclapply (1:numResamples, function(folds)
   {#j=4
     #print(j)
-    
-    if(x==1)
-    { 
-      set.train <- trainingdata[trainIndex, ]
-      set.test <- trainingdata[-trainIndex, ]
-    }else
-    {
-      set.train <- trainingdata[-trainIndex, ]
-      set.test <- trainingdata[trainIndex, ]
-    }
+    trainSet <- trainingdata[folds!=k,]
+    testSet <- trainingdata[folds==k,]
     
     #normalization
     trainParam <- caret::preProcess(as.matrix(set.train))
@@ -321,7 +317,7 @@ rmses <- pbmclapply (5:12, function(i)
     denormalizedTrainPredictions <- pred
     
     return(sum((predict(trainParam,set.test)[,ncol(set.test)]*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)]) - denormalizedTrainPredictions)^2) / nrow(set.test)) ^ 0.5
-  }#,mc.cores=(ncores)
+  },mc.cores=(ncores)
   )
   meanrmse <- mean(unlist(set.rmse))
   return(list(i,meanrmse))
