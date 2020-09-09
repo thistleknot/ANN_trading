@@ -148,7 +148,7 @@ rm(temp)
 
 #this is where I'll parallelize
 
-chosen <- "GOLD"
+chosen <- "SSO"
 data <- get(chosen)
 
 data2<-data
@@ -230,7 +230,7 @@ frmla <- as.formula(paste(colnames(set.train)[ncol(set.train)], paste(colnames(s
 #mlp
 if(FALSE)
 {
-  model = model <- mlp( predict(trainParam, set.train)[,1:(ncol(set.train)-1)], predict(trainParam, set.train)[,(ncol(set.train))], size=5, learnFuncParams=c(0.1), maxit = 50, inputsTest=predict(trainParam, set.test)[,1:(ncol(set.test)-1)], targetsTest=predict(trainParam, set.test)[,(ncol(set.test))]) 
+  model <- mlp( predict(trainParam, set.train)[,1:(ncol(set.train)-1)], predict(trainParam, set.train)[,(ncol(set.train))], size=5, learnFuncParams=c(0.1), maxit = 50, inputsTest=predict(trainParam, set.test)[,1:(ncol(set.test)-1)], targetsTest=predict(trainParam, set.test)[,(ncol(set.test))]) 
   summary(model)
   model
   weightMatrix(model)
@@ -276,7 +276,7 @@ numResamples <- 5
 #clusterExport(cl, ls(all.names=TRUE), envir = .GlobalEnv)
 #View(trainingdata)
 #rmses <- pbmclapply (5:(ncol(set.train)+1), function(i)
-rmses <- pbmclapply (5:20, function(i) 
+rmses <- pbmclapply (5:12, function(i) 
   #i=5
 {
   #print(i)
@@ -293,30 +293,38 @@ rmses <- pbmclapply (5:20, function(i)
     #print(j)
     trainSet <- trainingdata[folds!=x,]
     testSet <- trainingdata[folds==x,]
-
+    
     #normalization
     trainParam <- caret::preProcess(as.matrix(set.train))
     
     #j=1
     
     #/3 to avoid it growing too large
-    trainNN <- neuralnet(frmla, pnorm(predict(trainParam, set.train)), hidden = i , linear.output = F, stepmax = 1e5, algorithm='rprop-')
+    #trainNN <- neuralnet(frmla, pnorm(predict(trainParam, set.train)), hidden = i , linear.output = F, stepmax = 1e5, algorithm='rprop-')
+    trainNN <- mlp(pnorm(predict(trainParam, set.train))[,1:(ncol(set.train)-1)], pnorm(predict(trainParam, set.train))[,(ncol(set.train))], size=i, learnFunc =  "Quickprop", learnFuncParams=c(0.1), maxit = 200, inputsTest=predict(trainParam, set.test)[,1:(ncol(set.test)-1)], targetsTest=predict(trainParam, set.test)[,(ncol(set.test))]) 
     
     #set.fit <- nnet(frmla, data = set.train, 
     #maxit=1000, MaxNWts=84581, size=i, decay=0.01*j, linout = 1)
     #maxit=1000, size=i, MaxNWts=(ncol(data2))^(i+1), decay=0.01*j, linout = 1)
     
-    predict_testNN = compute(trainNN, pnorm(predict(trainParam, set.test)[,1:(ncol(set.test)-1)]))
+    #this is a pdf
+    #used with neuralnet
+    #predict_testNN = compute(trainNN, pnorm(predict(trainParam, set.test)[,1:(ncol(set.test)-1)]))
+    #used with mlp
+    predict_testNN <- predict(trainNN,pnorm(predict(trainParam, set.test)[,1:(ncol(set.test)-1)]))
     
     #convert back
     #inverse of log
-    
-    pred <- qnorm(predict_testNN$net.result)*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)])
+    #used with neuralnet
+    #pred <- qnorm(predict_testNN$net.result)*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)])
+    pred <- qnorm(predict_testNN)*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)])
     pred[pred>0,] <- exp(1)^log(pred[pred>0,])
     pred[pred<0] <- -exp(1)^log(abs(pred[pred<0,]))
     
     denormalizedTrainPredictions <- pred
+    plot(denormalizedTrainPredictions,predict(trainParam,set.test)[,ncol(set.test)])
     
+    #this is not normalized to a cdf
     return(sum((predict(trainParam,set.test)[,ncol(set.test)]*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)]) - denormalizedTrainPredictions)^2) / nrow(set.test)) ^ 0.5
   }#,mc.cores=(ncores)
   )
@@ -325,6 +333,7 @@ rmses <- pbmclapply (5:20, function(i)
   
 },mc.cores=(ncores)
 )
+
 
 best.rmse<-1
 for(i in 1:length(rmses))
@@ -354,13 +363,16 @@ traindataParam <- caret::preProcess(as.matrix(trainingdata))
 #candidate for parallelization
 # repeat and average the model 20 times  
 set.predict <- pbmclapply (1:5, function(x) {
+  #x=1
   #set.fit <- nnet(frmla, data = trainingdata, maxit=1000, size=best.network[1,1], decay=0.1*best.network[2,1], linout = 1) 
-  set.fit <- neuralnet(frmla, pnorm(predict(traindataParam, trainingdata)), hidden = best.network , linear.output = F, stepmax = 1e5, algorithm='rprop-')
+  #set.fit <- neuralnet(frmla, pnorm(predict(traindataParam, trainingdata)), hidden = best.network , linear.output = F, stepmax = 1e5, algorithm='rprop-')
+  set.fit <- mlp(pnorm(predict(traindataParam, trainingdata))[,1:(ncol(set.train)-1)], pnorm(predict(traindataParam, trainingdata))[,(ncol(set.train))], size=best.network, learnFunc =  "Quickprop", learnFuncParams=c(0.1), maxit = 200) 
   
   #return(
-  qnorm(predict(set.fit, newdata = pnorm(predict(traindataParam, data.frame(Testdata))[,1:(ncol(Testdata)-1)])))
+  qnorm(predict(set.fit, newdata = apply(predict(traindataParam, data.frame(Testdata))[,1:(ncol(Testdata)-1)],2,pnorm)))
   #)
   
+
 },mc.cores=(ncores)
 )
 #stopCluster(cl)
