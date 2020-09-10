@@ -179,7 +179,7 @@ rm(temp)
 
 #this is where I'll parallelize
 
-chosen <- "GOLD"
+chosen <- "GOOG"
 data <- get(chosen)
 
 data2<-data
@@ -358,7 +358,7 @@ rmses <- lapply (5:15, function(i)
     #print(pred)
     pred[pred>0,] <- exp(1)^log(pred[pred>0,])
     pred[pred<0] <- -exp(1)^log(abs(pred[pred<0,]))
-    print(pred)
+    #print(pred)
     
     denormalizedTrainPredictions <- pred
     #plot(denormalizedTrainPredictions,predict(trainParam,set.test)[,ncol(set.test)])
