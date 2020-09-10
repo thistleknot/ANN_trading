@@ -28,6 +28,7 @@ library(plyr)
 library(FCNN4R)
 library(RSNNS)
 library(IKTrading)
+library(NeuralSens)
 ncores <- detectCores(all.tests = FALSE, logical = TRUE)
 #system("mkdir -p /home/rstudio/dev-DailyStockReport")
 #system("scp rstudio:/home/rstudio/dev-DailyStockReport/customRules.R /home/rstudio/dev-DailyStockReport")
@@ -80,6 +81,36 @@ symbolstring1 <- c('^GSPC','GOOG','SSO','GOLD')
 
 getSymbols(symbolstring1,from=startDate,to=endDate,adjust=TRUE,src='yahoo')
 
+indexstring1 <- c('INDPRO')
+
+getSymbols(indexstring1,from=startDate,to=endDate,adjust=TRUE,src='FRED')
+
+if(FALSE)
+{
+  for(i in 1:length(indexstring1))
+  {#i=1
+    data <- get(indexstring1[i])
+    
+    data <- data[row.names(data.frame(data)) >= startDate & row.names(data.frame(data))<=endDate,]
+    
+    dates <- row.names(data.frame(data))
+    data <- cbind(data.frame(dates),data[,1,drop=FALSE])
+    colnames(data) <- c("Date", "INDPRO")
+    
+    #problem is here
+    pvt <- reshape2::dcast(data, data$Date,value.var=colnames(data)[2],fun.aggregate = mean, fill=NULL)
+    inter <- merge.data.frame(x=trading_dates[,'Date',drop=F],y=data,by='Date',all.x=T)
+    inter <- na_interpolation(inter,options=LINEAR)
+    
+    rownames(inter) <- inter$Date
+    
+    rm(data)
+    
+    rm(list=indexstring1[i])
+    assign(indexstring1[i],data)
+    
+  }
+}
 symbolstring1 <- c('GSPC','GOOG','SSO','GOLD')
 
 #symbolstring1 <- c('SP500TR','GOLD')
@@ -96,17 +127,17 @@ for(it in 1:length(symbolstring1))
 #adjusted
 for(it in 1:length(symbolstring1))
 { x=symbolstring1[it]
-  set <- data.frame(quantmod::adjustOHLC(as.xts(as.data.table(get(x)[,c("Open","High","Low","Close","Volume","Adjusted")])),use.Adjusted=TRUE,symbol.name=x))
-  d <- data.frame(as.Date(rownames(set)))[,,drop=FALSE]
-  colnames(d) <- "Date"
-  set <- cbind(d,set)
-  
-  temp <- set
-  rm(list=symbolstring1[it])
-  assign(symbolstring1[it],temp)
-  rm(set)
-  rm(temp)
-  rm(d)
+set <- data.frame(quantmod::adjustOHLC(as.xts(as.data.table(get(x)[,c("Open","High","Low","Close","Volume","Adjusted")])),use.Adjusted=TRUE,symbol.name=x))
+d <- data.frame(as.Date(rownames(set)))[,,drop=FALSE]
+colnames(d) <- "Date"
+set <- cbind(d,set)
+
+temp <- set
+rm(list=symbolstring1[it])
+assign(symbolstring1[it],temp)
+rm(set)
+rm(temp)
+rm(d)
 }
 
 adjustedDF <- pbmclapply(symbolstring1, function(x)
@@ -270,13 +301,13 @@ best.network<-matrix(c(5))
 #i is used for size
 #j is for decay
 
-set.seed(5)
+#set.seed(5)
 numResamples <- 5
 
 #clusterExport(cl, ls(all.names=TRUE), envir = .GlobalEnv)
 #View(trainingdata)
 #rmses <- pbmclapply (5:(ncol(set.train)+1), function(i)
-rmses <- pbmclapply (5:12, function(i) 
+rmses <- pbmclapply (5:20, function(i) 
   #i=5
 {
   #print(i)
@@ -285,44 +316,49 @@ rmses <- pbmclapply (5:12, function(i)
   
   #trainIndex <- sample(1:nrow(trainingdata), nrow(trainingdata)*.5)
   
+  #View(trainingdata)
   #folds <- createFolds(1:nrow(trainingdata),k=numResamples)
+  set.seed(i)
   folds=sample(rep(1:numResamples, length=nrow(trainingdata)))
   
   set.rmse <- lapply (1:numResamples, function(x)
-  {#x=1
-    #print(j)
+  {#x=3
+    #print(x)
     trainSet <- trainingdata[folds!=x,]
     testSet <- trainingdata[folds==x,]
     
     #normalization
     trainParam <- caret::preProcess(as.matrix(set.train))
+    #summary(trainParam$mean)
     
     #j=1
     
     #/3 to avoid it growing too large
-    #trainNN <- neuralnet(frmla, pnorm(predict(trainParam, set.train)), hidden = i , linear.output = F, stepmax = 1e5, algorithm='rprop-')
-    trainNN <- mlp(pnorm(predict(trainParam, set.train))[,1:(ncol(set.train)-1)], pnorm(predict(trainParam, set.train))[,(ncol(set.train))], size=i, learnFunc =  "Quickprop", learnFuncParams=c(0.1), maxit = 200, inputsTest=predict(trainParam, set.test)[,1:(ncol(set.test)-1)], targetsTest=predict(trainParam, set.test)[,(ncol(set.test))]) 
-    
+    #trainNN <- neuralnet(frmla, (predict(trainParam, set.train)), hidden = i , linear.output = F, stepmax = 1e5, algorithm='rprop-')
+    trainNN <- mlp((predict(trainParam, set.train))[,1:(ncol(set.train)-1)], (predict(trainParam, set.train))[,(ncol(set.train))], size=i, learnFunc =  "BackpropWeightDecay", learnFuncParams=c(0.1), linOut = TRUE, maxit = 1000, inputsTest=predict(trainParam, set.test)[,1:(ncol(set.test)-1)], targetsTest=predict(trainParam, set.test)[,(ncol(set.test))]) 
+    trainNN$fittedTestValues
     #set.fit <- nnet(frmla, data = set.train, 
     #maxit=1000, MaxNWts=84581, size=i, decay=0.01*j, linout = 1)
     #maxit=1000, size=i, MaxNWts=(ncol(data2))^(i+1), decay=0.01*j, linout = 1)
     
     #this is a pdf
     #used with neuralnet
-    #predict_testNN = compute(trainNN, pnorm(predict(trainParam, set.test)[,1:(ncol(set.test)-1)]))
+    #predict_testNN = compute(trainNN, (predict(trainParam, set.test)[,1:(ncol(set.test)-1)]))
     #used with mlp
-    predict_testNN <- predict(trainNN,pnorm(predict(trainParam, set.test)[,1:(ncol(set.test)-1)]))
+    #same as trainNN$fittedTestValues
+    predict_testNN <- predict(trainNN,(predict(trainParam, set.test)[,1:(ncol(set.test)-1)]))
     
     #convert back
     #inverse of log
     #used with neuralnet
-    #pred <- qnorm(predict_testNN$net.result)*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)])
-    pred <- qnorm(predict_testNN)*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)])
+    #pred <- (predict_testNN$net.result)*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)])
+    pred <- (predict_testNN)*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)])
+    #print(pred)
     pred[pred>0,] <- exp(1)^log(pred[pred>0,])
     pred[pred<0] <- -exp(1)^log(abs(pred[pred<0,]))
     
     denormalizedTrainPredictions <- pred
-    plot(denormalizedTrainPredictions,predict(trainParam,set.test)[,ncol(set.test)])
+    #plot(denormalizedTrainPredictions,predict(trainParam,set.test)[,ncol(set.test)])
     
     #this is not normalized to a cdf
     return(sum((predict(trainParam,set.test)[,ncol(set.test)]*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)]) - denormalizedTrainPredictions)^2) / nrow(set.test)) ^ 0.5
@@ -343,7 +379,6 @@ for(i in 1:length(rmses))
     best.network[1]<-rmses[[i]][[1]]
     #best.network[2,1]<-j
     best.rmse<-rmses[[i]][[2]]
-    
   }
 }
 
@@ -362,17 +397,31 @@ traindataParam <- caret::preProcess(as.matrix(trainingdata))
 #clusterExport(cl, ls(all.names=TRUE), envir = .GlobalEnv)
 #candidate for parallelization
 # repeat and average the model 20 times  
+
+#set.fit <- mlp((predict(traindataParam, trainingdata))[,1:(ncol(set.train)-1)], (predict(traindataParam, trainingdata))[,(ncol(set.train))], size=best.network, learnFunc =  "Quickprop", learnFuncParams=c(0.1), maxit = 200)
+
+#set.fit <- RSNNS::mlp(x = (predict(traindataParam, trainingdata))[,1:(ncol(set.train)-1)],y = (predict(traindataParam, trainingdata))[,(ncol(set.train))],size = best.network,linOut = TRUE,learnFunc =  "Quickprop", learnFuncParams=c(0.1),maxit=200)
+
+set.fit <- nnet(frmla,data = (predict(traindataParam, trainingdata)),linear.output = T,size = best.network,maxit = 200)
+
+#doesn't like mlp
+#sensHess <- HessianMLP(set.fit, trData = (predict(traindataParam, trainingdata)), output_name = "Return")
+sens <- SensAnalysisMLP(set.fit, trData = (predict(traindataParam, trainingdata)))
+SensitivityPlots(sens)
+
+#SensMatPlot(sensHess)
+
 set.predict <- pbmclapply (1:5, function(x) {
   #x=1
   #set.fit <- nnet(frmla, data = trainingdata, maxit=1000, size=best.network[1,1], decay=0.1*best.network[2,1], linout = 1) 
-  #set.fit <- neuralnet(frmla, pnorm(predict(traindataParam, trainingdata)), hidden = best.network , linear.output = F, stepmax = 1e5, algorithm='rprop-')
-  set.fit <- mlp(pnorm(predict(traindataParam, trainingdata))[,1:(ncol(set.train)-1)], pnorm(predict(traindataParam, trainingdata))[,(ncol(set.train))], size=best.network, learnFunc =  "Quickprop", learnFuncParams=c(0.1), maxit = 200) 
+  #set.fit <- neuralnet(frmla, (predict(traindataParam, trainingdata)), hidden = best.network , linear.output = F, stepmax = 1e5, algorithm='rprop-')
+  set.fit <- mlp((predict(traindataParam, trainingdata))[,1:(ncol(set.train)-1)], (predict(traindataParam, trainingdata))[,(ncol(set.train))], size=best.network, learnFunc =  "BackpropWeightDecay", learnFuncParams=c(0.1), maxit = 200) 
   
   #return(
-  qnorm(predict(set.fit, newdata = apply(predict(traindataParam, data.frame(Testdata))[,1:(ncol(Testdata)-1)],2,pnorm)))
+  (predict(set.fit, newdata = apply(predict(traindataParam, data.frame(Testdata))[,1:(ncol(Testdata)-1)],2,)))
   #)
   
-
+  
 },mc.cores=(ncores)
 )
 #stopCluster(cl)
