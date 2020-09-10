@@ -179,7 +179,7 @@ rm(temp)
 
 #this is where I'll parallelize
 
-chosen <- "SSO"
+chosen <- "GOLD"
 data <- get(chosen)
 
 data2<-data
@@ -307,10 +307,12 @@ numResamples <- 5
 #clusterExport(cl, ls(all.names=TRUE), envir = .GlobalEnv)
 #View(trainingdata)
 #rmses <- pbmclapply (5:(ncol(set.train)+1), function(i)
-rmses <- pbmclapply (5:20, function(i) 
+
+#if I use mclapply, some return nothing... mlp not thread safe?
+rmses <- lapply (5:15, function(i) 
   #i=5
 {
-  #print(i)
+  print(i)
   
   #set.rmse <- matrix(NA,numResamples)
   
@@ -334,9 +336,9 @@ rmses <- pbmclapply (5:20, function(i)
     #j=1
     
     #/3 to avoid it growing too large
-    #trainNN <- neuralnet(frmla, (predict(trainParam, set.train)), hidden = i , linear.output = F, stepmax = 1e5, algorithm='rprop-')
-    trainNN <- mlp((predict(trainParam, set.train))[,1:(ncol(set.train)-1)], (predict(trainParam, set.train))[,(ncol(set.train))], size=i, learnFunc =  "BackpropWeightDecay", learnFuncParams=c(0.1), linOut = TRUE, maxit = 1000, inputsTest=predict(trainParam, set.test)[,1:(ncol(set.test)-1)], targetsTest=predict(trainParam, set.test)[,(ncol(set.test))]) 
-    trainNN$fittedTestValues
+    #trainNN <- neuralnet(frmla, (predict(trainParam, set.train)), hidden = i , linear.output = T, stepmax = 1e5, algorithm='rprop-')
+    trainNN <- mlp((predict(trainParam, set.train))[,1:(ncol(set.train)-1)], (predict(trainParam, set.train))[,(ncol(set.train))], size=i, learnFunc =  "SCG", linOut = TRUE, maxit = 250, inputsTest=predict(trainParam, set.test)[,1:(ncol(set.test)-1)], targetsTest=predict(trainParam, set.test)[,(ncol(set.test))]) 
+    #trainNN$fittedTestValues
     #set.fit <- nnet(frmla, data = set.train, 
     #maxit=1000, MaxNWts=84581, size=i, decay=0.01*j, linout = 1)
     #maxit=1000, size=i, MaxNWts=(ncol(data2))^(i+1), decay=0.01*j, linout = 1)
@@ -356,6 +358,7 @@ rmses <- pbmclapply (5:20, function(i)
     #print(pred)
     pred[pred>0,] <- exp(1)^log(pred[pred>0,])
     pred[pred<0] <- -exp(1)^log(abs(pred[pred<0,]))
+    print(pred)
     
     denormalizedTrainPredictions <- pred
     #plot(denormalizedTrainPredictions,predict(trainParam,set.test)[,ncol(set.test)])
@@ -367,7 +370,7 @@ rmses <- pbmclapply (5:20, function(i)
   meanrmse <- mean(unlist(set.rmse))
   return(list(i,meanrmse))
   
-},mc.cores=(ncores)
+}#,mc.cores=(ncores)
 )
 
 
@@ -411,18 +414,18 @@ SensitivityPlots(sens)
 
 #SensMatPlot(sensHess)
 
-set.predict <- pbmclapply (1:5, function(x) {
+set.predict <- lapply (1:5, function(x) {
   #x=1
   #set.fit <- nnet(frmla, data = trainingdata, maxit=1000, size=best.network[1,1], decay=0.1*best.network[2,1], linout = 1) 
   #set.fit <- neuralnet(frmla, (predict(traindataParam, trainingdata)), hidden = best.network , linear.output = F, stepmax = 1e5, algorithm='rprop-')
-  set.fit <- mlp((predict(traindataParam, trainingdata))[,1:(ncol(set.train)-1)], (predict(traindataParam, trainingdata))[,(ncol(set.train))], size=best.network, learnFunc =  "BackpropWeightDecay", learnFuncParams=c(0.1), maxit = 200) 
+  set.fit <- mlp((predict(traindataParam, trainingdata))[,1:(ncol(set.train)-1)], (predict(traindataParam, trainingdata))[,(ncol(set.train))], size=best.network, linOut = TRUE, learnFunc =  "SCG", maxit = 250) 
   
   #return(
-  (predict(set.fit, newdata = apply(predict(traindataParam, data.frame(Testdata))[,1:(ncol(Testdata)-1)],2,)))
+  predict(set.fit, predict(traindataParam, data.frame(Testdata))[,1:(ncol(Testdata)-1)],2,)
   #)
   
   
-},mc.cores=(ncores)
+}#,mc.cores=(ncores)
 )
 #stopCluster(cl)
 set.predict1 <- data.frame(rowMeans(do.call(cbind, set.predict)))
