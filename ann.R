@@ -29,6 +29,7 @@ library(FCNN4R)
 library(RSNNS)
 library(IKTrading)
 library(NeuralSens)
+library(NeuralNetTools)
 ncores <- detectCores(all.tests = FALSE, logical = TRUE)
 #system("mkdir -p /home/rstudio/dev-DailyStockReport")
 #system("scp rstudio:/home/rstudio/dev-DailyStockReport/customRules.R /home/rstudio/dev-DailyStockReport")
@@ -93,24 +94,19 @@ if(FALSE)
     
     data <- data[row.names(data.frame(data)) >= startDate & row.names(data.frame(data))<=endDate,]
     
-    dates <- row.names(data.frame(data))
-    data <- cbind(data.frame(dates),data[,1,drop=FALSE])
-    colnames(data) <- c("Date", "INDPRO")
+    inter <- merge.data.frame(x=trading_dates,y=data,  by="row.names",all.x=T)[,2:3,drop=F]
+    row.names(inter) <- inter$Date
     
-    #problem is here
-    pvt <- reshape2::dcast(data, data$Date,value.var=colnames(data)[2],fun.aggregate = mean, fill=NULL)
-    inter <- merge.data.frame(x=trading_dates[,'Date',drop=F],y=data,by='Date',all.x=T)
-    inter <- na_interpolation(inter,options=LINEAR)
-    
-    rownames(inter) <- inter$Date
+    inter <- na_locf(inter)
     
     rm(data)
     
     rm(list=indexstring1[i])
-    assign(indexstring1[i],data)
+    assign(indexstring1[i],inter[,2,drop=F])
     
   }
 }
+
 symbolstring1 <- c('GSPC','GOOG','SSO','GOLD')
 
 #symbolstring1 <- c('SP500TR','GOLD')
@@ -127,17 +123,17 @@ for(it in 1:length(symbolstring1))
 #adjusted
 for(it in 1:length(symbolstring1))
 { x=symbolstring1[it]
-set <- data.frame(quantmod::adjustOHLC(as.xts(as.data.table(get(x)[,c("Open","High","Low","Close","Volume","Adjusted")])),use.Adjusted=TRUE,symbol.name=x))
-d <- data.frame(as.Date(rownames(set)))[,,drop=FALSE]
-colnames(d) <- "Date"
-set <- cbind(d,set)
-
-temp <- set
-rm(list=symbolstring1[it])
-assign(symbolstring1[it],temp)
-rm(set)
-rm(temp)
-rm(d)
+  set <- data.frame(quantmod::adjustOHLC(as.xts(as.data.table(get(x)[,c("Open","High","Low","Close","Volume","Adjusted")])),use.Adjusted=TRUE,symbol.name=x))
+  d <- data.frame(as.Date(rownames(set)))[,,drop=FALSE]
+  colnames(d) <- "Date"
+  set <- cbind(d,set)
+  
+  temp <- set
+  rm(list=symbolstring1[it])
+  assign(symbolstring1[it],temp)
+  rm(set)
+  rm(temp)
+  rm(d)
 }
 
 adjustedDF <- pbmclapply(symbolstring1, function(x)
@@ -164,17 +160,17 @@ adjusted_pvt_returns <- tail(adjusted_pvt_returns,-1)
 #remove date, set as.xts
 for(it in 1:length(symbolstring1))
 {x=symbolstring1[it]
-
-inter <- merge.data.frame(x=trading_dates[,'Date',drop=F],y=data.frame(get(x)),by='Date',all.x=T)
-inter <- na_interpolation(inter,options=LINEAR)
-
-rownames(inter) <- inter$Date
-
-temp <- as.xts(get(x)[c("Open","High","Low","Close","Volume","Adjusted")])
-
-rm(list=symbolstring1[it])
-assign(symbolstring1[it],temp)
-rm(temp)
+  
+  inter <- merge.data.frame(x=trading_dates[,'Date',drop=F],y=data.frame(get(x)),by='Date',all.x=T)
+  inter <- na_interpolation(inter,options=LINEAR)
+  
+  rownames(inter) <- inter$Date
+  
+  temp <- as.xts(get(x)[c("Open","High","Low","Close","Volume","Adjusted")])
+  
+  rm(list=symbolstring1[it])
+  assign(symbolstring1[it],temp)
+  rm(temp)
 }
 
 #this is where I'll parallelize
@@ -227,7 +223,10 @@ colnames(cmf) <- c("CMF")
 nextDay <- matrix(lag(set.lr,-1))
 colnames(nextDay) <- c("Return")
 
-TTRs <- cbind(ema.50, ema.200, EVWMA, MACD, adx, tdi, aroon, vhf, rsiMA1,rsiMA2 ,stoch2MA, stochWPR, smi, cmo, cci, bbands,dc, atr,cmf, ar, sar, cmf, obv, mfi, will, cci, ichimoku, ar, sar, nextDay)
+TTRs <- cbind(get("GSPC")$Adjusted,get("GOLD")$Adjusted,ema.50, ema.200, EVWMA, MACD, adx, tdi, aroon, vhf, rsiMA1,rsiMA2 ,stoch2MA, stochWPR, smi, cmo, cci, bbands,dc, atr,cmf, ar, sar, cmf, obv, mfi, will, cci, ichimoku, ar, sar, nextDay)
+#TTRs <- merge.data.frame(y=TTRs,x=INDPRO,by="row.names",all.x=T)
+#rownames(TTRs) <- TTRs$Row.names
+#TTRs <- TTRs[,-1]
 
 nr <- nrow(price)
 
@@ -337,6 +336,7 @@ rmses <- lapply (5:15, function(i)
     
     #/3 to avoid it growing too large
     #trainNN <- neuralnet(frmla, (predict(trainParam, set.train)), hidden = i , linear.output = T, stepmax = 1e5, algorithm='rprop-')
+    
     trainNN <- mlp((predict(trainParam, set.train))[,1:(ncol(set.train)-1)], (predict(trainParam, set.train))[,(ncol(set.train))], size=i, learnFunc =  "SCG", linOut = TRUE, maxit = 250, inputsTest=predict(trainParam, set.test)[,1:(ncol(set.test)-1)], targetsTest=predict(trainParam, set.test)[,(ncol(set.test))]) 
     #trainNN$fittedTestValues
     #set.fit <- nnet(frmla, data = set.train, 
@@ -405,12 +405,75 @@ traindataParam <- caret::preProcess(as.matrix(trainingdata))
 
 #set.fit <- RSNNS::mlp(x = (predict(traindataParam, trainingdata))[,1:(ncol(set.train)-1)],y = (predict(traindataParam, trainingdata))[,(ncol(set.train))],size = best.network,linOut = TRUE,learnFunc =  "Quickprop", learnFuncParams=c(0.1),maxit=200)
 
-set.fit <- nnet(frmla,data = (predict(traindataParam, trainingdata)),linear.output = T,size = best.network,maxit = 200)
 
 #doesn't like mlp
 #sensHess <- HessianMLP(set.fit, trData = (predict(traindataParam, trainingdata)), output_name = "Return")
+set.fit <- nnet(frmla,data = (predict(traindataParam, trainingdata)),linear.output = T,size = best.network,maxit = 200)
 sens <- SensAnalysisMLP(set.fit, trData = (predict(traindataParam, trainingdata)))
-SensitivityPlots(sens)
+
+TTR_reduced <- TTRs
+
+rmses=matrix(NA, ncol(TTRs)-2,2)
+#rmses=matrix(NA, ncol(TTRs)-2)
+
+#reduce inputs
+for(i in 1:(ncol(TTRs)-2))
+{#i=1
+  
+  trainingdata <- TTR_reduced[trainSetIndex,]
+  ncol(TTR_reduced)
+  
+  frmla <- as.formula(paste(colnames(trainingdata)[ncol(trainingdata)], paste(colnames(trainingdata)[1:(ncol(trainingdata)-1)], sep = "", 
+                                                                        collapse = " + "), sep = " ~ "))
+  
+  traindataParam <- caret::preProcess(as.matrix(trainingdata))
+  set.fit <- nnet(frmla,data = (predict(traindataParam, trainingdata)),linear.output = T,size = best.network,maxit = 200)
+  
+  #set.fit <- nnet(frmla, data = (predict(traindataParam, trainingdata)), maxit=200, decay=set.fitp$decay, size=best.network, linout = 1) 
+  #sens <- SensAnalysisMLP(set.fit, trData = (predict(traindataParam, trainingdata)),plot=FALSE)
+  
+  set.seed(i)
+  folds=sample(rep(1:numResamples, length=nrow(trainingdata)))
+  
+  set.rmse <- lapply (1:numResamples, function(x)
+  {#x=3
+    #print(x)
+    trainSet <- trainingdata[folds!=x,]
+    testSet <- trainingdata[folds==x,]
+    
+    trainParam <- caret::preProcess(as.matrix(set.train))
+
+    trainNN <- mlp((predict(trainParam, set.train))[,1:(ncol(set.train)-1)], (predict(trainParam, set.train))[,(ncol(set.train))], size=best.network, learnFunc =  "SCG", linOut = TRUE, maxit = 250, inputsTest=predict(trainParam, set.test)[,1:(ncol(set.test)-1)], targetsTest=predict(trainParam, set.test)[,(ncol(set.test))]) 
+
+    predict_testNN <- predict(trainNN,(predict(trainParam, set.test)[,1:(ncol(set.test)-1)]))
+    
+    pred <- (predict_testNN)*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)])
+
+    pred[pred>0,] <- exp(1)^log(pred[pred>0,])
+    pred[pred<0] <- -exp(1)^log(abs(pred[pred<0,]))
+
+    denormalizedTrainPredictions <- pred
+    return(sum((predict(trainParam,set.test)[,ncol(set.test)]*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)]) - denormalizedTrainPredictions)^2) / nrow(set.test)) ^ 0.5
+  }
+  )
+  meanrmse <- mean(unlist(set.rmse))
+  
+  #exclude <- rownames(sens$sens$.outcome[sens$sens$.outcome$meanSensSQ==max(sens$sens$.outcome$meanSensSQ),])
+  exclude <- rownames(data.frame(garson(set.fit,bar_plot=F)))[garson(set.fit,bar_plot=F)==(min(garson(set.fit,bar_plot=F)))]
+  
+  rmses[i,] <- c(meanrmse,paste(colnames(TTR_reduced), collapse=" + "))
+  #rmses[i] <- meanrmse
+  print(exclude)
+  
+  TTR_reduced <- TTR_reduced[ , -which(colnames(TTR_reduced) %in% c(exclude))]
+  print(ncol(TTR_reduced))
+
+}
+plot(rmses[,1],type="l")
+plot(unlist(lapply(rmses, `[[`, 1)),unlist(lapply(rmses, `[[`, 2)),type="l")
+
+#SensitivityPlots(sens)
+
 
 #SensMatPlot(sensHess)
 
