@@ -137,8 +137,8 @@ rmses <- lapply (5:15, function(i)
   set.rmse <- lapply (1:numResamples, function(x)
   {#x=3
     #print(x)
-    trainSet <- trainingdata[folds!=x,]
-    testSet <- trainingdata[folds==x,]
+    set.train <- trainingdata[folds!=x,]
+    set.test <- trainingdata[folds==x,]
     
     #normalization
     trainParam <- caret::preProcess(as.matrix(set.train))
