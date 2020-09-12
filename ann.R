@@ -319,7 +319,7 @@ rmses <- lapply (5:15, function(i)
   
   #View(trainingdata)
   #folds <- createFolds(1:nrow(trainingdata),k=numResamples)
-  set.seed(i)
+  #set.seed(i)
   folds=sample(rep(1:numResamples, length=nrow(trainingdata)))
   
   set.rmse <- lapply (1:numResamples, function(x)
@@ -407,9 +407,11 @@ traindataParam <- caret::preProcess(as.matrix(trainingdata))
 
 #doesn't like mlp
 #sensHess <- HessianMLP(set.fit, trData = (predict(traindataParam, trainingdata)), output_name = "Return")
-set.fit <- nnet(frmla,data = (predict(traindataParam, trainingdata)),linear.output = T,size = best.network,maxit = 250)
-#set.fit <- mlp((predict(traindataParam, trainingdata))[,1:(ncol(set.train)-1)], (predict(traindataParam, trainingdata))[,(ncol(set.train))], size=i, learnFunc =  "SCG", linOut = TRUE, maxit = 250) 
-sens <- SensAnalysisMLP(set.fit, trData = (predict(traindataParam, trainingdata)), output_name = "Return")
+#set.fit <- nnet(frmla,data = (predict(traindataParam, trainingdata)),linear.output = T,size = best.network,maxit = 250)
+set.fit <- mlp((predict(traindataParam, trainingdata))[,1:(ncol(set.train)-1)], (predict(traindataParam, trainingdata))[,(ncol(set.train))], size=i, learnFunc =  "SCG", linOut = TRUE, maxit = 250) 
+
+set.fit <- mlp((predict(traindataParam, trainingdata))[,1:(ncol(trainingdata)-1)], (predict(traindataParam, trainingdata))[,(ncol(trainingdata))], size=best.network, learnFunc =  "SCG", linOut = TRUE, maxit = 250, inputsTest=(predict(traindataParam, trainingdata))[,1:(ncol(trainingdata)-1)], targetsTest=(predict(traindataParam, trainingdata))[,(ncol(trainingdata))]) 
+#set.fit <- nnet(frmla,data = (predict(traindataParam, trainingdata)),linear.output = T,size = best.network,maxit = 200)
 
 TTR_reduced <- TTRs
 
@@ -428,13 +430,14 @@ for(i in 1:(ncol(TTRs)-2))
                                                                         collapse = " + "), sep = " ~ "))
   
   traindataParam <- caret::preProcess(as.matrix(trainingdata))
-  set.fit <- nnet(frmla,data = (predict(traindataParam, trainingdata)),linear.output = T,size = best.network,maxit = 200)
+  #use mlp here
+  #set.fit <- nnet(frmla,data = (predict(traindataParam, trainingdata)),linear.output = T,size = best.network,maxit = 200)
   
   #set.fit <- nnet(frmla, data = (predict(traindataParam, trainingdata)), maxit=200, decay=set.fitp$decay, size=best.network, linout = 1) 
   #sens <- SensAnalysisMLP(set.fit, trData = (predict(traindataParam, trainingdata)),plot=FALSE)
   sens <- garson(set.fit)
   
-  set.seed(i)
+  #set.seed(i)
   folds=sample(rep(1:numResamples, length=nrow(trainingdata)))
   
   set.rmse <- lapply (1:numResamples, function(x)
@@ -462,6 +465,7 @@ for(i in 1:(ncol(TTRs)-2))
   
   #exclude <- rownames(sens$sens$.outcome[sens$sens$.outcome$meanSensSQ==max(sens$sens$.outcome$meanSensSQ),])
   exclude <- rownames(data.frame(garson(set.fit,bar_plot=F)))[garson(set.fit,bar_plot=F)==(min(garson(set.fit,bar_plot=F)))]
+  exclude <- gsub("Input_", "", exclude)
   
   rmses[i,] <- c(meanrmse,paste(colnames(TTR_reduced), collapse=" + "))
   #rmses[i] <- meanrmse

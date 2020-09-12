@@ -221,8 +221,8 @@ traindataParam <- caret::preProcess(as.matrix(trainingdata))
 
 #doesn't like mlp
 #sensHess <- HessianMLP(set.fit, trData = (predict(traindataParam, trainingdata)), output_name = "Return")
-set.fit <- nnet(frmla,data = (predict(traindataParam, trainingdata)),linear.output = T,size = best.network,maxit = 200)
-sens <- SensAnalysisMLP(set.fit, trData = (predict(traindataParam, trainingdata)))
+#set.fit <- nnet(frmla,data = (predict(traindataParam, trainingdata)),linear.output = T,size = best.network,maxit = 200)
+#sens <- SensAnalysisMLP(set.fit, trData = (predict(traindataParam, trainingdata)))
 
 data_reduced <- data2
 
@@ -241,11 +241,15 @@ for(i in 1:(ncol(data2)-2))
                                                                               collapse = " + "), sep = " ~ "))
   
   traindataParam <- caret::preProcess(as.matrix(trainingdata))
+  
+  #doing an in sample error
+  
   set.fit <- mlp((predict(traindataParam, trainingdata))[,1:(ncol(trainingdata)-1)], (predict(traindataParam, trainingdata))[,(ncol(trainingdata))], size=best.network, learnFunc =  "SCG", linOut = TRUE, maxit = 250, inputsTest=(predict(traindataParam, trainingdata))[,1:(ncol(trainingdata)-1)], targetsTest=(predict(traindataParam, trainingdata))[,(ncol(trainingdata))]) 
   #set.fit <- nnet(frmla,data = (predict(traindataParam, trainingdata)),linear.output = T,size = best.network,maxit = 200)
   
   #set.fit <- nnet(frmla, data = (predict(traindataParam, trainingdata)), maxit=200, decay=set.fitp$decay, size=best.network, linout = 1) 
   #sens <- SensAnalysisMLP(set.fit, trData = (predict(traindataParam, trainingdata)),plot=FALSE)
+  #works when training has testData (that makes sense, it needs CV)
   sens <- SensAnalysisMLP(set.fit, trData = (predict(traindataParam, trainingdata)),plot=FALSE,output_name = paste0(colnames(trainingdata[,ncol(trainingdata),drop=F])))
   
   #set.seed(i)
