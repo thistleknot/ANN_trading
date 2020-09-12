@@ -35,6 +35,8 @@ ncores <- detectCores(all.tests = FALSE, logical = TRUE)
 #system("scp rstudio:/home/rstudio/dev-DailyStockReport/customRules.R /home/rstudio/dev-DailyStockReport")
 #})
 
+numResamples <- 20
+
 data <- read.csv(file="states.csv",header = TRUE)
 data2 <- data[,-1]
 
@@ -113,7 +115,6 @@ best.network<-matrix(c(5))
 #j is for decay
 
 #set.seed(5)
-numResamples <- 5
 
 #clusterExport(cl, ls(all.names=TRUE), envir = .GlobalEnv)
 #View(trainingdata)
@@ -131,7 +132,7 @@ rmses <- lapply (5:15, function(i)
   
   #View(trainingdata)
   #folds <- createFolds(1:nrow(trainingdata),k=numResamples)
-  set.seed(i)
+  #set.seed(i)
   folds=sample(rep(1:numResamples, length=nrow(trainingdata)))
   
   set.rmse <- lapply (1:numResamples, function(x)
@@ -228,11 +229,9 @@ data_reduced <- data2
 rmses=matrix(NA, ncol(data2)-2,2)
 #rmses=matrix(NA, ncol(data2)-2)
 
-numResamples=10
-
 #reduce inputs
 for(i in 1:(ncol(data2)-2))
-{#i=1
+{#i=2
   
   trainingdata <- data_reduced[trainSetIndex,]
   print(ncol(data_reduced))
@@ -242,12 +241,14 @@ for(i in 1:(ncol(data2)-2))
                                                                               collapse = " + "), sep = " ~ "))
   
   traindataParam <- caret::preProcess(as.matrix(trainingdata))
-  set.fit <- nnet(frmla,data = (predict(traindataParam, trainingdata)),linear.output = T,size = best.network,maxit = 200)
+  set.fit <- mlp((predict(traindataParam, trainingdata))[,1:(ncol(trainingdata)-1)], (predict(traindataParam, trainingdata))[,(ncol(trainingdata))], size=best.network, learnFunc =  "SCG", linOut = TRUE, maxit = 250, inputsTest=(predict(traindataParam, trainingdata))[,1:(ncol(trainingdata)-1)], targetsTest=(predict(traindataParam, trainingdata))[,(ncol(trainingdata))]) 
+  #set.fit <- nnet(frmla,data = (predict(traindataParam, trainingdata)),linear.output = T,size = best.network,maxit = 200)
   
   #set.fit <- nnet(frmla, data = (predict(traindataParam, trainingdata)), maxit=200, decay=set.fitp$decay, size=best.network, linout = 1) 
-  sens <- SensAnalysisMLP(set.fit, trData = (predict(traindataParam, trainingdata)),plot=FALSE)
+  #sens <- SensAnalysisMLP(set.fit, trData = (predict(traindataParam, trainingdata)),plot=FALSE)
+  sens <- SensAnalysisMLP(set.fit, trData = (predict(traindataParam, trainingdata)),plot=FALSE,output_name = paste0(colnames(trainingdata[,ncol(trainingdata),drop=F])))
   
-  set.seed(i)
+  #set.seed(i)
   folds=sample(rep(1:numResamples, length=nrow(trainingdata)))
   
   set.rmse <- lapply (1:numResamples, function(x)
@@ -276,6 +277,8 @@ for(i in 1:(ncol(data2)-2))
   
   #exclude <- rownames(sens$sens$.outcome[sens$sens$.outcome$meanSensSQ==max(sens$sens$.outcome$meanSensSQ),])
   exclude <- rownames(data.frame(garson(set.fit,bar_plot=F)))[garson(set.fit,bar_plot=F)==(min(garson(set.fit,bar_plot=F)))]
+  
+  exclude <- gsub("Input_", "", exclude)
   
   rmses[i,] <- c(meanrmse,paste(colnames(data_reduced), collapse=" + "))
   #rmses[i] <- meanrmse
@@ -307,7 +310,7 @@ rmses <- lapply (5:15, function(i)
   
   #View(trainingdata)
   #folds <- createFolds(1:nrow(trainingdata),k=numResamples)
-  set.seed(i)
+  #set.seed(i)
   folds=sample(rep(1:numResamples, length=nrow(trainingdata)))
   
   set.rmse <- lapply (1:numResamples, function(x)
@@ -360,7 +363,6 @@ rmses <- lapply (5:15, function(i)
   
 }#,mc.cores=(ncores)
 )
-
 
 best.rmse<-max(unlist(lapply(rmses, `[[`, 2)))
 for(i in 1:length(rmses))
