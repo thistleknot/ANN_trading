@@ -408,9 +408,9 @@ traindataParam <- caret::preProcess(as.matrix(trainingdata))
 #doesn't like mlp
 #sensHess <- HessianMLP(set.fit, trData = (predict(traindataParam, trainingdata)), output_name = "Return")
 #set.fit <- nnet(frmla,data = (predict(traindataParam, trainingdata)),linear.output = T,size = best.network,maxit = 250)
-set.fit <- mlp((predict(traindataParam, trainingdata))[,1:(ncol(set.train)-1)], (predict(traindataParam, trainingdata))[,(ncol(set.train))], size=i, learnFunc =  "SCG", linOut = TRUE, maxit = 250) 
+#set.fit <- mlp((predict(traindataParam, trainingdata))[,1:(ncol(set.train)-1)], (predict(traindataParam, trainingdata))[,(ncol(set.train))], size=i, learnFunc =  "SCG", linOut = TRUE, maxit = 250) 
 
-set.fit <- mlp((predict(traindataParam, trainingdata))[,1:(ncol(trainingdata)-1)], (predict(traindataParam, trainingdata))[,(ncol(trainingdata))], size=best.network, learnFunc =  "SCG", linOut = TRUE, maxit = 250, inputsTest=(predict(traindataParam, trainingdata))[,1:(ncol(trainingdata)-1)], targetsTest=(predict(traindataParam, trainingdata))[,(ncol(trainingdata))]) 
+#set.fit <- mlp((predict(traindataParam, trainingdata))[,1:(ncol(trainingdata)-1)], (predict(traindataParam, trainingdata))[,(ncol(trainingdata))], size=best.network, learnFunc =  "SCG", linOut = TRUE, maxit = 250, inputsTest=(predict(traindataParam, trainingdata))[,1:(ncol(trainingdata)-1)], targetsTest=(predict(traindataParam, trainingdata))[,(ncol(trainingdata))]) 
 #set.fit <- nnet(frmla,data = (predict(traindataParam, trainingdata)),linear.output = T,size = best.network,maxit = 200)
 
 TTR_reduced <- TTRs
@@ -433,6 +433,7 @@ for(i in 1:(ncol(TTRs)-2))
   #use mlp here
   #set.fit <- nnet(frmla,data = (predict(traindataParam, trainingdata)),linear.output = T,size = best.network,maxit = 200)
   
+  set.fit <- mlp((predict(traindataParam, trainingdata))[,1:(ncol(trainingdata)-1)], (predict(traindataParam, trainingdata))[,(ncol(trainingdata))], size=best.network, learnFunc =  "SCG", linOut = TRUE, maxit = 250, inputsTest=(predict(traindataParam, trainingdata))[,1:(ncol(trainingdata)-1)], targetsTest=(predict(traindataParam, trainingdata))[,(ncol(trainingdata))]) 
   #set.fit <- nnet(frmla, data = (predict(traindataParam, trainingdata)), maxit=200, decay=set.fitp$decay, size=best.network, linout = 1) 
   #sens <- SensAnalysisMLP(set.fit, trData = (predict(traindataParam, trainingdata)),plot=FALSE)
   sens <- garson(set.fit)
@@ -487,7 +488,7 @@ trainingdata <- newData[trainSetIndex,]
 Testdata<-newData[testSetIndex,]
 
 outputC <- paste0(colnames(newData[,ncol(newData),drop=F]))
-sens <- SensAnalysisMLP(set.fit, trData = predict(traindataParam, newData), output_name = paste0(colnames(newData[,ncol(newData),drop=F])))
+#sens <- SensAnalysisMLP(set.fit, trData = predict(traindataParam, newData), output_name = paste0(colnames(newData[,ncol(newData),drop=F])))
 
 #SensitivityPlots(sens)
 

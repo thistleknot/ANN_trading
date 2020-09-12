@@ -203,7 +203,7 @@ plot(unlist(lapply(rmses, `[[`, 1)),unlist(lapply(rmses, `[[`, 2)),type="l")
 best.network
 # create the Input and Target matrix for test
 #best.network <-7
-Testdata<-data2[testSetIndex,]
+#Testdata<-data2[testSetIndex,]
 
 # fit the best model on test data
 #set.fit <- nnet(frmla, data = trainingdata, maxit=1000, MaxNWts=84581, size=best.network[1,1], decay=0.1*best.network[2,1], linout = 1) 
@@ -291,8 +291,6 @@ for(i in 1:(ncol(data2)-2))
   data_reduced <- data_reduced[ , -which(colnames(data_reduced) %in% c(exclude))]
   SensitivityPlots(sens)
   garson(set.fit)
-  
-  
   
 }
 plot(rmses[,1],type="l")
