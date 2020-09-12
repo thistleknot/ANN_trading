@@ -294,6 +294,91 @@ print(rmses[which(rmses[,1]==min(rmses[,1])),2])
 
 newFrmla <- (t(read.csv(text=gsub(" \\+ ", ",", newForm),header=F)))
 
+data_reduced <- data2[,newFrmla]
+
+rmses <- lapply (5:15, function(i) 
+  #i=5
+{
+  print(i)
+  
+  #set.rmse <- matrix(NA,numResamples)
+  
+  #trainIndex <- sample(1:nrow(trainingdata), nrow(trainingdata)*.5)
+  
+  #View(trainingdata)
+  #folds <- createFolds(1:nrow(trainingdata),k=numResamples)
+  set.seed(i)
+  folds=sample(rep(1:numResamples, length=nrow(trainingdata)))
+  
+  set.rmse <- lapply (1:numResamples, function(x)
+  {#x=3
+    #print(x)
+    set.train <- data_reduced[folds!=x,]
+    set.test <- data_reduced[folds==x,]
+    
+    #normalization
+    trainParam <- caret::preProcess(as.matrix(set.train))
+    #summary(trainParam$mean)
+    
+    #j=1
+    
+    #/3 to avoid it growing too large
+    #trainNN <- neuralnet(frmla, (predict(trainParam, set.train)), hidden = i , linear.output = T, stepmax = 1e5, algorithm='rprop-')
+    
+    trainNN <- mlp((predict(trainParam, set.train))[,1:(ncol(set.train)-1)], (predict(trainParam, set.train))[,(ncol(set.train))], size=i, learnFunc =  "SCG", linOut = TRUE, maxit = 250, inputsTest=predict(trainParam, set.test)[,1:(ncol(set.test)-1)], targetsTest=predict(trainParam, set.test)[,(ncol(set.test))]) 
+    #trainNN$fittedTestValues
+    #set.fit <- nnet(frmla, data = set.train, 
+    #maxit=1000, MaxNWts=84581, size=i, decay=0.01*j, linout = 1)
+    #maxit=1000, size=i, MaxNWts=(ncol(data2))^(i+1), decay=0.01*j, linout = 1)
+    
+    #this is a pdf
+    #used with neuralnet
+    #predict_testNN = compute(trainNN, (predict(trainParam, set.test)[,1:(ncol(set.test)-1)]))
+    #used with mlp
+    #same as trainNN$fittedTestValues
+    predict_testNN <- predict(trainNN,(predict(trainParam, set.test)[,1:(ncol(set.test)-1)]))
+    
+    #convert back
+    #inverse of log
+    #used with neuralnet
+    #pred <- (predict_testNN$net.result)*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)])
+    pred <- (predict_testNN)*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)])
+    #print(pred)
+    pred[pred>0,] <- exp(1)^log(pred[pred>0,])
+    pred[pred<0] <- -exp(1)^log(abs(pred[pred<0,]))
+    #print(pred)
+    
+    denormalizedTrainPredictions <- pred
+    #plot(denormalizedTrainPredictions,predict(trainParam,set.test)[,ncol(set.test)])
+    
+    #this is not normalized to a cdf
+    return(sum((predict(trainParam,set.test)[,ncol(set.test)]*sd(set.train[,ncol(set.train)])+mean(set.train[,ncol(set.train)]) - denormalizedTrainPredictions)^2) / nrow(set.test)) ^ 0.5
+  }#,mc.cores=(ncores)
+  )
+  meanrmse <- mean(unlist(set.rmse))
+  return(list(i,meanrmse))
+  
+}#,mc.cores=(ncores)
+)
+
+
+best.rmse<-max(unlist(lapply(rmses, `[[`, 2)))
+for(i in 1:length(rmses))
+{#i=1
+  print(i)
+  if (rmses[[i]][[2]]<best.rmse) {
+    best.network[1]<-rmses[[i]][[1]]
+    #best.network[2,1]<-j
+    best.rmse<-rmses[[i]][[2]]
+  }
+}
+
+plot(unlist(lapply(rmses, `[[`, 1)),unlist(lapply(rmses, `[[`, 2)),type="l")
+
+best.network
+# create the Input and Target matrix for test
+#best.network <-7
+
 newData <- data2[,c(newFrmla)]
 
 trainingdata <- newData[trainSetIndex,]
@@ -322,13 +407,18 @@ traindataParam <- caret::preProcess(as.matrix(newData))
 
 set.fit <- RSNNS::mlp((predict(traindataParam, newData))[,1:(ncol(newData)-1)], (predict(traindataParam, newData))[,(ncol(newData))], size=best.network, linOut = TRUE, learnFunc =  "SCG", maxit = 250)
 
+#https://beckmw.wordpress.com/2013/11/14/visualizing-neural-networks-in-r-update/
+plotnet(set.fit)
+
 garson(set.fit)
 newFrmla <- as.formula(paste(colnames(newData)[ncol(newData)], paste(colnames(newData)[1:(ncol(newData)-1)], sep = "", 
                                                          collapse = " + "), sep = " ~ "))
 
-set.fit <- nnet(newFrmla,data = predict(traindataParam, newData),linear.output = T,size = best.network,maxit = 300)
+#set.fit <- nnet(newFrmla,data = predict(traindataParam, newData),linear.output = T,size = best.network,maxit = 500)
 outputC <- paste0(colnames(newData[,ncol(newData),drop=F]))
 sens <- SensAnalysisMLP(set.fit, trData = predict(traindataParam, newData), output_name = paste0(colnames(newData[,ncol(newData),drop=F])))
+
+
 
 prediction <- set.fit$fitted.values*traindataParam$std[ncol(newData)]+traindataParam$mean[ncol(newData)]
 actual <- newData[,ncol(newData)]

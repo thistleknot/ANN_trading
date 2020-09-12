@@ -301,7 +301,7 @@ best.network<-matrix(c(5))
 #j is for decay
 
 #set.seed(5)
-numResamples <- 5
+numResamples <- 10
 
 #clusterExport(cl, ls(all.names=TRUE), envir = .GlobalEnv)
 #View(trainingdata)
@@ -405,11 +405,11 @@ traindataParam <- caret::preProcess(as.matrix(trainingdata))
 
 #set.fit <- RSNNS::mlp(x = (predict(traindataParam, trainingdata))[,1:(ncol(set.train)-1)],y = (predict(traindataParam, trainingdata))[,(ncol(set.train))],size = best.network,linOut = TRUE,learnFunc =  "Quickprop", learnFuncParams=c(0.1),maxit=200)
 
-
 #doesn't like mlp
 #sensHess <- HessianMLP(set.fit, trData = (predict(traindataParam, trainingdata)), output_name = "Return")
-set.fit <- nnet(frmla,data = (predict(traindataParam, trainingdata)),linear.output = T,size = best.network,maxit = 200)
-sens <- SensAnalysisMLP(set.fit, trData = (predict(traindataParam, trainingdata)))
+set.fit <- nnet(frmla,data = (predict(traindataParam, trainingdata)),linear.output = T,size = best.network,maxit = 250)
+#set.fit <- mlp((predict(traindataParam, trainingdata))[,1:(ncol(set.train)-1)], (predict(traindataParam, trainingdata))[,(ncol(set.train))], size=i, learnFunc =  "SCG", linOut = TRUE, maxit = 250) 
+sens <- SensAnalysisMLP(set.fit, trData = (predict(traindataParam, trainingdata)), output_name = "Return")
 
 TTR_reduced <- TTRs
 
@@ -422,6 +422,7 @@ for(i in 1:(ncol(TTRs)-2))
   
   trainingdata <- TTR_reduced[trainSetIndex,]
   ncol(TTR_reduced)
+  colnames(TTR_reduced)
   
   frmla <- as.formula(paste(colnames(trainingdata)[ncol(trainingdata)], paste(colnames(trainingdata)[1:(ncol(trainingdata)-1)], sep = "", 
                                                                         collapse = " + "), sep = " ~ "))
@@ -431,6 +432,7 @@ for(i in 1:(ncol(TTRs)-2))
   
   #set.fit <- nnet(frmla, data = (predict(traindataParam, trainingdata)), maxit=200, decay=set.fitp$decay, size=best.network, linout = 1) 
   #sens <- SensAnalysisMLP(set.fit, trData = (predict(traindataParam, trainingdata)),plot=FALSE)
+  sens <- garson(set.fit)
   
   set.seed(i)
   folds=sample(rep(1:numResamples, length=nrow(trainingdata)))
@@ -438,8 +440,8 @@ for(i in 1:(ncol(TTRs)-2))
   set.rmse <- lapply (1:numResamples, function(x)
   {#x=3
     #print(x)
-    trainSet <- trainingdata[folds!=x,]
-    testSet <- trainingdata[folds==x,]
+    set.train <- trainingdata[folds!=x,]
+    set.test <- trainingdata[folds==x,]
     
     trainParam <- caret::preProcess(as.matrix(set.train))
 
@@ -470,14 +472,24 @@ for(i in 1:(ncol(TTRs)-2))
 
 }
 plot(rmses[,1],type="l")
-plot(unlist(lapply(rmses, `[[`, 1)),unlist(lapply(rmses, `[[`, 2)),type="l")
+newForm <- rmses[which(rmses[,1]==min(rmses[,1])),2]
+print(rmses[which(rmses[,1]==min(rmses[,1])),2])
+
+newFrmla <- (t(read.csv(text=gsub(" \\+ ", ",", newForm),header=F)))
+
+newData <- TTRs[,c(newFrmla)]
+
+trainingdata <- newData[trainSetIndex,]
+Testdata<-newData[testSetIndex,]
+
+outputC <- paste0(colnames(newData[,ncol(newData),drop=F]))
+sens <- SensAnalysisMLP(set.fit, trData = predict(traindataParam, newData), output_name = paste0(colnames(newData[,ncol(newData),drop=F])))
 
 #SensitivityPlots(sens)
 
-
 #SensMatPlot(sensHess)
 
-trainingdata<-TTRs[trainSetIndex,]
+traindataParam <- caret::preProcess(as.matrix(trainingdata))
 
 set.predict <- lapply (1:5, function(x) {
   #x=1
@@ -485,7 +497,7 @@ set.predict <- lapply (1:5, function(x) {
   #set.fit <- neuralnet(frmla, (predict(traindataParam, trainingdata)), hidden = best.network , linear.output = F, stepmax = 1e5, algorithm='rprop-')
   set.fit <- mlp((predict(traindataParam, trainingdata))[,1:(ncol(trainingdata)-1)], (predict(traindataParam, trainingdata))[,(ncol(trainingdata))], size=best.network, linOut = TRUE, learnFunc =  "SCG", maxit = 250) 
   
-  #return(
+  #return
   predict(set.fit, predict(traindataParam, data.frame(Testdata))[,1:(ncol(Testdata)-1)],2,)
   #)
   
@@ -493,10 +505,10 @@ set.predict <- lapply (1:5, function(x) {
 }#,mc.cores=(ncores)
 )
 #stopCluster(cl)
+
+#forecast
 set.predict1 <- data.frame(rowMeans(do.call(cbind, set.predict)))
-
 set.predict1 <- set.predict1*sd(trainingdata[,ncol(trainingdata)])+mean(trainingdata[,ncol(trainingdata)])
-
 pred <- set.predict1
 
 pred[pred>0] <- exp(1)^log(pred[pred>0,])
@@ -504,6 +516,7 @@ pred[pred<0] <- -exp(1)^log(abs(pred[pred<0,]))
 
 set.predict1 <- pred
 
+#actual
 prep <- Testdata[,"Return"]
 
 pred <- data.frame(prep)
