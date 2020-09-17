@@ -433,10 +433,16 @@ for(i in 1:(ncol(TTRs)-2))
   #use mlp here
   #set.fit <- nnet(frmla,data = (predict(traindataParam, trainingdata)),linear.output = T,size = best.network,maxit = 200)
   
-  set.fit <- mlp((predict(traindataParam, trainingdata))[,1:(ncol(trainingdata)-1)], (predict(traindataParam, trainingdata))[,(ncol(trainingdata))], size=best.network, learnFunc =  "SCG", linOut = TRUE, maxit = 250, inputsTest=(predict(traindataParam, trainingdata))[,1:(ncol(trainingdata)-1)], targetsTest=(predict(traindataParam, trainingdata))[,(ncol(trainingdata))]) 
-  #set.fit <- nnet(frmla, data = (predict(traindataParam, trainingdata)), maxit=200, decay=set.fitp$decay, size=best.network, linout = 1) 
-  #sens <- SensAnalysisMLP(set.fit, trData = (predict(traindataParam, trainingdata)),plot=FALSE)
-  sens <- garson(set.fit)
+  #set.fit <- mlp((predict(traindataParam, trainingdata))[,1:(ncol(trainingdata)-1)], (predict(traindataParam, trainingdata))[,(ncol(trainingdata))], size=best.network, learnFunc =  "SCG", linOut = TRUE, maxit = 250, inputsTest=(predict(traindataParam, trainingdata))[,1:(ncol(trainingdata)-1)], targetsTest=(predict(traindataParam, trainingdata))[,(ncol(trainingdata))])
+  
+  #set.fit <- mlp((predict(traindataParam, trainingdata))[,1:(ncol(trainingdata)-1)], (predict(traindataParam, trainingdata))[,(ncol(trainingdata))]) 
+  
+  #only way I know how to get this code to work with mlp is to run set.fit twice
+  set.fit <- nnet(frmla, data = (predict(traindataParam, trainingdata)), maxit=200, size=best.network, linout = 1) 
+
+  #why is this not working?  
+  sens <- SensAnalysisMLP(set.fit, trData = (predict(traindataParam, trainingdata)),plot=FALSE, output_name="Return")
+  #sens <- garson(set.fit)
   
   #set.seed(i)
   folds=sample(rep(1:numResamples, length=nrow(trainingdata)))
@@ -464,9 +470,13 @@ for(i in 1:(ncol(TTRs)-2))
   )
   meanrmse <- mean(unlist(set.rmse))
   
-  #exclude <- rownames(sens$sens$.outcome[sens$sens$.outcome$meanSensSQ==max(sens$sens$.outcome$meanSensSQ),])
-  exclude <- rownames(data.frame(garson(set.fit,bar_plot=F)))[garson(set.fit,bar_plot=F)==(min(garson(set.fit,bar_plot=F)))]
-  exclude <- gsub("Input_", "", exclude)
+  #mlp
+  
+  exclude <- rownames(sens$sens$Return[sens$sens$Return$meanSensSQ==max(sens$sens$Return$meanSensSQ),])
+  
+  #garson
+  #exclude <- rownames(data.frame(garson(set.fit,bar_plot=F)))[garson(set.fit,bar_plot=F)==(min(garson(set.fit,bar_plot=F)))]
+  #exclude <- gsub("Input_", "", exclude)
   
   rmses[i,] <- c(meanrmse,paste(colnames(TTR_reduced), collapse=" + "))
   #rmses[i] <- meanrmse
