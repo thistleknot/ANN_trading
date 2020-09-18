@@ -15,11 +15,11 @@ s <- expression(1 / (1+e^-x))
 #derivative
 formula <- D(s,x)
 
-delta = function(sum,E)
+delta = function(output,E)
 {
   #delta(score.sum,E)
   
-  return(-1*(E * derivative(sum, formula)))
+  return(-1*(E * derivative(output, formula)))
 }
 
 #heaton's example
@@ -91,13 +91,22 @@ score.sum <- sweep(hidden.layer.output %*% W2, 2, Wb2, '+')
 score.output <- sigmoid(score.sum)
 
 #back propagation
-E <- score.output - Y
+#matt mazur /2 but "differntiates later" not sure what that means, so I removed its
+E <- ((score.output - Y)^2)
 
 #p44 
 #interesting.  I'm doing a derivative of the sum (look at delta function, as if it's sigmoid, but sum != sigmoid algorithm)
 #I guess whatever formula is derived from derivative, should be applied to the sum as well as output (partial derivatives)
 #example.  If switching to tanh
-score.outputNode.delta <- delta(score.sum,E)
+#heaton made an error.  Book states the derivative of the activation function, but he supplied the sum
+#two examples show the output is supposed to be used: 
+#https://github.com/thistleknot/Ann-v2/blob/master/myNueralNet.cpp
+#https://mattmazur.com/2015/03/17/a-step-by-step-backpropagation-example/
+
+#heaton's work
+#score.outputNode.delta <- delta(score.sum,E)
+
+score.outputNode.delta <- delta(score.output,E)
 
 #node Delta
 
@@ -108,7 +117,14 @@ score.outputNode.delta <- delta(score.sum,E)
 
 #derivative(hidden.layer.sum[2]) * score.outputNode.delta * W2[2]
 #no need to calculate nodeDelta's for input or bias nuerons (#43)
-hidden.layerNode.delta <- t(derivative(hidden.layer.sum, formula)) * (W2 %*% score.outputNode.delta)
+#according to https://mattmazur.com/2015/03/17/a-step-by-step-backpropagation-example/
+#error should be 1/2(E^2), but also derivative is based on output vs sum
+#p46 states, "sum is for derivatives, output is for gradient)
+
+#heaton's error
+#hidden.layerNode.delta <- t(derivative(hidden.layer.sum, formula)) * (W2 %*% score.outputNode.delta)
+#matt mazur
+hidden.layerNode.delta <- t(derivative(hidden.layer.output, formula)) * (W2 %*% score.outputNode.delta)
 
 #gradient works with outputs
 #partial derivatives
