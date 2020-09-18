@@ -50,6 +50,31 @@ train.dnn <- function(x, y, traindata=data, testdata=NULL,
                       display = 100,
                       random.seed = 1)
 {
+  #run this to init/test
+  if(FALSE)
+  {
+    x=1:4
+    y=5
+    traindata=iris[samp,]
+    testdata=iris[-samp,]
+    hidden=6
+    maxit=2000
+    display=50
+    # set hidden layers and neurons
+    # currently, only support 1 hidden layer
+    hidden=c(6)
+    # max iteration steps
+    maxit=2000
+    # delta loss 
+    abstol=1e-2
+    # learning rate
+    lr = 1e-2
+    # regularization rate
+    reg = 1e-3
+    # show results every 'display' step
+    display = 100
+    random.seed = 1
+  }
   # to make the case reproducible.
   set.seed(random.seed)
   
@@ -134,20 +159,26 @@ train.dnn <- function(x, y, traindata=data, testdata=NULL,
     dscores[Y.index] <- dscores[Y.index] -1
     dscores <- dscores / batchsize
     
-    
+    #weightDelta = output * OutputDelta
     dW2 <- t(hidden.layer) %*% dscores 
     db2 <- colSums(dscores)
     
     dhidden <- dscores %*% t(W2)
     dhidden[hidden.layer <= 0] <- 0
     
+    #weightDelta <- output * HNodeDelta
     dW1 <- t(X) %*% dhidden
+    
+    #
     db1 <- colSums(dhidden) 
     
     # update ....
+    
+    #modify weightDelta w + current value of weight * regularization, ~momentum w current weight
     dW2 <- dW2 + reg*W2
     dW1 <- dW1  + reg*W1
     
+    #apply learning rate to node delta and add weight
     W1 <- W1 - lr * dW1
     b1 <- b1 - lr * db1
     
