@@ -159,14 +159,14 @@ train.dnn <- function(x, y, traindata=data, testdata=NULL,
     dscores[Y.index] <- dscores[Y.index] -1
     dscores <- dscores / batchsize
     
-    #weightDelta = output * OutputDelta
+    #HiddenWeightDelta = output * OutputDelta
     dW2 <- t(hidden.layer) %*% dscores 
     db2 <- colSums(dscores)
     
     dhidden <- dscores %*% t(W2)
     dhidden[hidden.layer <= 0] <- 0
     
-    #weightDelta <- output * HNodeDelta
+    #InputWeightDelta <- output * HNodeDelta
     dW1 <- t(X) %*% dhidden
     
     #
